@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "resources": [
+    {
+      "acceptedTypes": [
+        "audio/*"
+      ],
+      "file": {
+        "extension": "mp3",
+        "mime": "audio/mpeg",
+        "name": "Elan Hickler - ChaosArp Lorenz.mp3",
+        "size": 10447933,
+        "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3"
+      },
+      "id": "chaosarp-lorenz-startup",
+      "kind": "audio",
+      "metadata": {
+        "artist": "Elan Hickler",
+        "title": "ChaosArp Lorenz",
+        "startupMusic": true
+      },
+      "name": "Elan Hickler - ChaosArp Lorenz",
+      "path": "audio/Elan Hickler - ChaosArp Lorenz.mp3",
+      "resourceId": "chaosarp-lorenz-startup",
+      "sourceName": "Elan Hickler - ChaosArp Lorenz.mp3",
+      "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3",
+      "tags": [
+        "startup",
+        "music",
+        "lorenz"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SoundEmote Sandbox</title>
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #1a2027;
+    --panel-hover: #222a33;
+    --text: #e8edf2;
+    --dim: #8a97a5;
+    --accent: #4fd1c5;
+    --err: #f28b82;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .wrap { width: min(720px, 92vw); text-align: center; }
+  h1 { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
+  .sub { color: var(--dim); margin-bottom: 36px; }
+  .cards { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .card {
+    flex: 1 1 200px; max-width: 220px; background: var(--panel);
+    border: 1px solid #2b3540; border-radius: 12px; padding: 24px 18px;
+    cursor: pointer; transition: background .15s, transform .15s;
+  }
+  .card:hover { background: var(--panel-hover); transform: translateY(-2px); }
+  .card h2 { font-size: 18px; margin-bottom: 8px; }
+  .card p { font-size: 13px; color: var(--dim); line-height: 1.45; }
+  .card .icon { font-size: 28px; margin-bottom: 10px; }
+  #join-row {
+    display: none; margin-top: 22px; gap: 8px; justify-content: center;
+  }
+  #join-row input {
+    width: 300px; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid #2b3540; background: #0c1013; color: var(--text);
+    font-size: 14px; outline: none;
+  }
+  #join-row input:focus { border-color: var(--accent); }
+  button.go {
+    padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+    background: var(--accent); color: #08302c; font-weight: 600; font-size: 14px;
+  }
+  button.go:disabled { opacity: .5; cursor: wait; }
+  #status { margin-top: 22px; color: var(--dim); font-size: 14px; min-height: 20px; }
+  #status.err { color: var(--err); }
+  #share { display: none; margin-top: 26px; background: var(--panel);
+    border: 1px solid #2b3540; border-radius: 12px; padding: 22px; }
+  #share code {
+    display: inline-block; background: #0c1013; padding: 8px 14px;
+    border-radius: 8px; font-size: 16px; color: var(--accent); margin: 10px 0 16px;
+    user-select: all;
+  }
+  #share p { color: var(--dim); font-size: 13px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SoundEmote Sandbox</h1>
+  <div class="sub">modular audio synthesis playground</div>
+
+  <div class="cards" id="cards">
+    <div class="card" id="btn-solo">
+      <div class="icon">&#127911;</div>
+      <h2>Solo</h2>
+      <p>Start a private workspace on this computer.</p>
+    </div>
+    <div class="card" id="btn-host">
+      <div class="icon">&#128225;</div>
+      <h2>Host</h2>
+      <p>Start a workspace others on your network can join.</p>
+    </div>
+    <div class="card" id="btn-join">
+      <div class="icon">&#128279;</div>
+      <h2>Join</h2>
+      <p>Enter a host's address to join their workspace.</p>
+    </div>
+  </div>
+
+  <div id="join-row">
+    <input id="join-addr" placeholder="192.168.1.42  or  192.168.1.42:8765" spellcheck="false">
+    <button class="go" id="join-go">Join</button>
+  </div>
+
+  <div id="share">
+    <p>Workspace is live. Others on your network can join at:</p>
+    <code id="share-url"></code><br>
+    <p style="margin-bottom:14px">They can use this app (Join) or any browser.</p>
+    <button class="go" id="enter-go">Enter workspace</button>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script>
+  const invoke = window.__TAURI__ && window.__TAURI__.core
+    ? window.__TAURI__.core.invoke
+    : null;
+  const $ = (id) => document.getElementById(id);
+  const status = (msg, err) => {
+    const el = $("status");
+    el.textContent = msg || "";
+    el.className = err ? "err" : "";
+  };
+  const busy = (on) => {
+    document.querySelectorAll(".card, .go").forEach((el) => {
+      el.style.pointerEvents = on ? "none" : "";
+      el.style.opacity = on ? ".55" : "";
+    });
+  };
+
+  $("btn-solo").onclick = async () => {
+    if (!invoke) return status("Tauri bridge unavailable.", true);
+    busy(true); status("Starting local server…");
+    try {
+      const url = await invoke("launch_solo");
+      location.replace(url);
+    } catch (e) { busy(false); status(String(e), true); }
+  };
+
+  $("btn-host").onclick = async () => {
+    if (!invoke) return status("Tauri bridge unavailable.", true);
+    busy(true); status("Starting shared server…");
+    try {
+      const info = await invoke("launch_host");
+      busy(false); status("");
+      $("cards").style.display = "none";
+      $("join-row").style.display = "none";
+      $("share").style.display = "block";
+      $("share-url").textContent =
+        info.share_url || "http://<your-LAN-IP>:8765/";
+      $("enter-go").onclick = () => location.replace(info.url);
+    } catch (e) { busy(false); status(String(e), true); }
+  };
+
+  $("btn-join").onclick = () => {
+    const row = $("join-row");
+    row.style.display = row.style.display === "flex" ? "none" : "flex";
+    $("join-addr").focus();
+  };
+
+  const doJoin = () => {
+    let addr = $("join-addr").value.trim();
+    if (!addr) return;
+    if (!/^https?:\/\//i.test(addr)) addr = "http://" + addr;
+    try {
+      const u = new URL(addr);
+      if (!u.port) u.port = "8765";
+      status("Connecting…");
+      location.replace(u.href);
+    } catch { status("That address doesn't look valid.", true); }
+  };
+  $("join-go").onclick = doJoin;
+  $("join-addr").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doJoin();
+  });
+</script>
+</body>
+</html>

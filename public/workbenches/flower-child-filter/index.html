@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flower Child Filter Workbench</title>
+  <link rel="stylesheet" href="./styles.css?v=flower-child-filter-workbench-1">
+</head>
+<body>
+  <main class="flower-workbench">
+    <section class="stage" aria-label="Flower Child Filter module workbench">
+      <canvas id="flowerCanvas" width="1280" height="720" aria-label="Flower Child filter scope"></canvas>
+      <div class="module-card" aria-hidden="true">
+        <div class="module-title">
+          <span>USA</span>
+          <strong>Flower Child Filter 1</strong>
+        </div>
+        <div class="marionette">
+          <i></i>
+          <i></i>
+          <i></i>
+          <b></b>
+        </div>
+        <div class="socket-row">
+          <span>IN</span>
+          <span>CUT</span>
+          <span>RES</span>
+          <span>OUT</span>
+        </div>
+      </div>
+      <button id="flowerAuditionButton" class="audition-button" type="button">
+        <span>Audition</span>
+        <strong>Flower Child LP24</strong>
+      </button>
+    </section>
+
+    <aside class="controls" aria-label="Flower Child controls">
+      <header>
+        <span>Workbench Module Draft</span>
+        <h1>Flower Child Filter 1</h1>
+      </header>
+
+      <label class="select-row" for="flowerSource">
+        <span>Source</span>
+        <select id="flowerSource">
+          <option value="saw">Saw probe</option>
+          <option value="pulse">Pulse train</option>
+          <option value="noise">Dust noise</option>
+        </select>
+      </label>
+
+      <div class="control-row">
+        <label for="flowerCutoff">Cutoff</label>
+        <input id="flowerCutoff" type="range" min="0" max="1" step="0.001" value="0.46">
+        <output id="flowerCutoffValue" for="flowerCutoff">0.460</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerResonance">Resonance</label>
+        <input id="flowerResonance" type="range" min="0" max="1" step="0.001" value="0.42">
+        <output id="flowerResonanceValue" for="flowerResonance">0.420</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerChaos">Chaos</label>
+        <input id="flowerChaos" type="range" min="0" max="1" step="0.001" value="0.08">
+        <output id="flowerChaosValue" for="flowerChaos">0.080</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerInput">Input</label>
+        <input id="flowerInput" type="range" min="0" max="10" step="0.001" value="0.30">
+        <output id="flowerInputValue" for="flowerInput">0.300</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerOutput">Output</label>
+        <input id="flowerOutput" type="range" min="0" max="10" step="0.001" value="1.00">
+        <output id="flowerOutputValue" for="flowerOutput">1.000</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerDryWet">Dry Wet</label>
+        <input id="flowerDryWet" type="range" min="0" max="1" step="0.001" value="1.00">
+        <output id="flowerDryWetValue" for="flowerDryWet">1.000</output>
+      </div>
+
+      <div class="control-row">
+        <label for="flowerOversampling">Oversampling</label>
+        <input id="flowerOversampling" type="range" min="1" max="8" step="1" value="2">
+        <output id="flowerOversamplingValue" for="flowerOversampling">2x</output>
+      </div>
+
+      <pre id="flowerPacket" class="packet" aria-label="Flower Child module packet"></pre>
+    </aside>
+  </main>
+  <script src="./flower-child-filter-workbench.js?v=flower-child-filter-workbench-1"></script>
+</body>
+</html>

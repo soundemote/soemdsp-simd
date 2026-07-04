@@ -1,0 +1,1487 @@
+function setNodeGraphLiveProcessorError(message = "AudioWorklet processor error") {
+  setNodeGraphLiveOutputMuted(true);
+  nodeGraphMvp.live.runtime = null;
+  setNodeGraphLiveEvidence("processor-error", {
+    message,
+    patchFingerprint: nodeGraphPatchFingerprint(),
+  });
+  setNodeGraphLiveStatus("error", "warn");
+  setNodeGraphLiveEngineStatus("engine error", "warn");
+  setNodeGraphLiveEngineTitle(message);
+  setNodeGraphLivePlanStatus("plan blocked", "warn");
+  setNodeGraphLiveInputMeter();
+  setNodeGraphLiveMeter();
+  setNodeGraphLiveScheduleStatus(`processor error: ${message}`, "warn");
+  document.getElementById("nodeLiveStatus").title = message;
+  renderNodeGraphLiveControls(Boolean(nodeGraphMvp.live.node));
+}
+
+function setNodeGraphLiveOutputMuted(muted) {
+  const outputGain = nodeGraphMvp.live.outputGain;
+  const context = nodeGraphMvp.live.context;
+  if (!outputGain?.gain) {
+    return;
+  }
+  const value = muted ? 0 : 1;
+  const time = context?.currentTime || 0;
+  try {
+    outputGain.gain.cancelScheduledValues(time);
+    outputGain.gain.setValueAtTime(value, time);
+  } catch (_error) {
+    outputGain.gain.value = value;
+  }
+}
+
+let nodeGraphLiveNativeModuleCatalogPromise = null;
+let nodeGraphLiveNativeModuleBytes = {};
+
+// On static hosts with no server behind the page (e.g. the sandbox embedded
+// as a static export), "/api/native-modules" doesn't exist. Fall back to a
+// pre-generated catalog shipped alongside index.html — same shape server.py
+// returns, so nothing downstream needs to know which path was used.
+async function fetchNodeGraphLiveNativeModuleCatalogFallback() {
+  try {
+    const response = await fetch("native-modules-catalog.json", { cache: "no-store" });
+    return response.ok ? response.json() : { modules: [] };
+  } catch (_error) {
+    return { modules: [] };
+  }
+}
+
+async function fetchNodeGraphLiveNativeModuleCatalog() {
+  if (!nodeGraphLiveNativeModuleCatalogPromise) {
+    nodeGraphLiveNativeModuleCatalogPromise = fetch("/api/native-modules", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : fetchNodeGraphLiveNativeModuleCatalogFallback())
+      .catch(() => fetchNodeGraphLiveNativeModuleCatalogFallback());
+  }
+  return nodeGraphLiveNativeModuleCatalogPromise;
+}
+
+async function fetchNodeGraphLiveNativeModuleBytes(entry) {
+  const wasmUrl = String(entry?.wasmUrl || "");
+  if (!wasmUrl) {
+    return null;
+  }
+  if (!nodeGraphLiveNativeModuleBytes[wasmUrl]) {
+    nodeGraphLiveNativeModuleBytes[wasmUrl] = fetch(wasmUrl, { cache: "no-store" })
+      .then((response) => response.ok ? response.arrayBuffer() : null)
+      .catch(() => null);
+  }
+  return nodeGraphLiveNativeModuleBytes[wasmUrl];
+}
+
+async function sendNodeGraphLiveNativeModules(liveNode) {
+  if (!liveNode?.port) {
+    return;
+  }
+  const catalog = await fetchNodeGraphLiveNativeModuleCatalog();
+  const nativeModules = Array.isArray(catalog?.modules) ? catalog.modules : [];
+  for (const entry of nativeModules) {
+    if (!entry?.wasmAvailable) {
+      continue;
+    }
+    const bytes = await fetchNodeGraphLiveNativeModuleBytes(entry);
+    if (!(bytes instanceof ArrayBuffer)) {
+      continue;
+    }
+    const transferableBytes = bytes.slice(0);
+    liveNode.port.postMessage(
+      {
+        type: "setNativeModuleWasm",
+        name: entry.name || entry.targetType || "",
+        targetType: entry.targetType || "",
+        bytes: transferableBytes,
+      },
+      [transferableBytes],
+    );
+  }
+}
+
+async function refreshNodeGraphLiveMicrophonePermissionState() {
+  if (!navigator.permissions?.query) {
+    nodeGraphMvp.live.inputPermissionStatus = "unsupported";
+    updateNodeGraphLiveInputTestStatus();
+    return "unsupported";
+  }
+  try {
+    const permission = await navigator.permissions.query({ name: "microphone" });
+    const updatePermissionState = () => {
+      nodeGraphMvp.live.inputPermissionStatus = permission.state || "unknown";
+      if (
+        nodeGraphMvp.live.inputActive &&
+        !nodeGraphMvp.live.inputStream &&
+        permission.state === "denied"
+      ) {
+        const message = "Microphone permission is blocked in the browser.";
+        setNodeGraphLiveInputStatus("blocked", message);
+        setNodeGraphLiveMicStatus("blocked", message);
+      } else if (
+        nodeGraphMvp.live.inputActive &&
+        !nodeGraphMvp.live.inputStream &&
+        nodeGraphMvp.live.micStatus === "blocked"
+      ) {
+        const routeState = nodeGraphLiveInputRouteState();
+        setNodeGraphLiveInputStatus(routeState.state, routeState.message);
+        setNodeGraphLiveMicStatus(
+          "armed",
+          permission.state === "granted"
+            ? "Microphone permission is allowed. Start OUTPUT to connect it."
+            : "Start OUTPUT to request browser microphone permission.",
+        );
+      } else {
+        updateNodeGraphLiveInputTestStatus();
+      }
+    };
+    updatePermissionState();
+    permission.onchange = updatePermissionState;
+    return nodeGraphMvp.live.inputPermissionStatus;
+  } catch (_error) {
+    nodeGraphMvp.live.inputPermissionStatus = "unsupported";
+    updateNodeGraphLiveInputTestStatus();
+    return "unsupported";
+  }
+}
+
+async function refreshNodeGraphLiveInputDevices() {
+  const select = document.getElementById("nodeLiveInputDeviceSelect");
+  if (!select) {
+    return;
+  }
+  const selectedDeviceId = nodeGraphMvp.live.inputDeviceId || "";
+  select.replaceChildren(new Option("default input", ""));
+  select.value = "";
+  select.disabled = !navigator.mediaDevices?.enumerateDevices;
+  if (select.disabled) {
+    select.title = nodeGraphTooltipText("audio.inputDeviceUnavailable");
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputDevices = devices.filter((device) => device.kind === "audioinput");
+    inputDevices.forEach((device, index) => {
+      const label = device.label || `input ${index + 1}`;
+      select.append(new Option(label, device.deviceId));
+    });
+    const hasSelectedDevice = selectedDeviceId &&
+      inputDevices.some((device) => device.deviceId === selectedDeviceId);
+    select.value = hasSelectedDevice ? selectedDeviceId : "";
+    if (!hasSelectedDevice) {
+      nodeGraphMvp.live.inputDeviceId = "";
+    }
+    select.title = inputDevices.length
+      ? nodeGraphTooltipText("audio.inputDevice")
+      : nodeGraphTooltipText("audio.inputDeviceMissing");
+  } catch (error) {
+    select.disabled = true;
+    select.title = error.message || nodeGraphTooltipText("audio.inputDeviceUnavailable");
+  }
+}
+
+async function handleNodeGraphLiveInputDeviceChange(event) {
+  nodeGraphMvp.live.inputDeviceId = event.target.value || "";
+  if (!nodeGraphMvp.live.inputActive || !nodeGraphMvp.live.context || !nodeGraphMvp.live.node) {
+    return;
+  }
+  stopNodeGraphLiveInputSource();
+  try {
+    await startNodeGraphLiveInputSource();
+  } catch (error) {
+    setNodeGraphLiveBlockedError("input", error, { schedule: false });
+  }
+}
+
+function nodeGraphLiveInputErrorMessage(error) {
+  const name = error?.name || "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Microphone permission was blocked. Allow microphone access in the browser, then press Output again.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "No browser audio input device was found.";
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "The selected audio input is busy or unavailable.";
+  }
+  if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+    return "The selected audio input is unavailable.";
+  }
+  return error?.message || "Browser audio input unavailable.";
+}
+
+function cleanupNodeGraphMockInputStream() {
+  try {
+    nodeGraphMvp.live.mockInputOscillator?.stop();
+  } catch (_error) {
+    // Mock input may already be stopped by live shutdown.
+  }
+  try {
+    nodeGraphMvp.live.mockInputOscillator?.disconnect();
+    nodeGraphMvp.live.mockInputGain?.disconnect();
+    nodeGraphMvp.live.mockInputDestination?.disconnect?.();
+  } catch (_error) {
+    // Disconnected mock graph nodes are harmless.
+  }
+  nodeGraphMvp.live.mockInputDestination = null;
+  nodeGraphMvp.live.mockInputGain = null;
+  nodeGraphMvp.live.mockInputOscillator = null;
+}
+
+function setNodeGraphMockInputFactory(options = {}) {
+  const frequency = Number.isFinite(Number(options.frequency))
+    ? Math.max(20, Math.min(20000, Number(options.frequency)))
+    : 220;
+  const gain = Number.isFinite(Number(options.gain))
+    ? Math.max(0, Math.min(1, Number(options.gain)))
+    : 0.25;
+  nodeGraphMvp.live.inputStreamFactory = async ({ context }) => {
+    if (!context?.createMediaStreamDestination) {
+      throw new Error("Mock browser input needs MediaStreamDestination support.");
+    }
+    cleanupNodeGraphMockInputStream();
+    const oscillator = context.createOscillator();
+    const inputGain = context.createGain();
+    const destination = context.createMediaStreamDestination();
+    oscillator.type = "sine";
+    oscillator.frequency.value = frequency;
+    inputGain.gain.value = gain;
+    oscillator.connect(inputGain);
+    inputGain.connect(destination);
+    oscillator.start();
+    nodeGraphMvp.live.mockInputDestination = destination;
+    nodeGraphMvp.live.mockInputGain = inputGain;
+    nodeGraphMvp.live.mockInputOscillator = oscillator;
+    return destination.stream;
+  };
+}
+
+function stopNodeGraphMockInput() {
+  const hadMockInput = Boolean(
+    nodeGraphMvp.live.mockInputOscillator ||
+    nodeGraphMvp.live.mockInputGain ||
+    nodeGraphMvp.live.mockInputDestination
+  );
+  nodeGraphMvp.live.inputStreamFactory = null;
+  if (hadMockInput && nodeGraphMvp.live.inputStream) {
+    stopNodeGraphLiveInputSource();
+  } else {
+    cleanupNodeGraphMockInputStream();
+  }
+}
+
+async function startNodeGraphMockInput(options = {}) {
+  setNodeGraphMockInputFactory(options);
+  nodeGraphMvp.live.inputActive = true;
+  ensureNodeGraphLiveInputModule();
+  if (!nodeGraphMvp.live.node || !nodeGraphMvp.live.context) {
+    nodeGraphMvp.live.outputEnabled = true;
+    await startNodeGraphLiveAudio();
+  } else {
+    await syncNodeGraphLiveInputSource();
+  }
+  return nodeGraphLiveDebug();
+}
+
+function nodeGraphLiveInputDeviceIsUnavailable(error) {
+  return [
+    "ConstraintNotSatisfiedError",
+    "DevicesNotFoundError",
+    "NotFoundError",
+    "OverconstrainedError",
+  ].includes(error?.name || "");
+}
+
+async function requestNodeGraphLiveInputStream(deviceId = nodeGraphMvp.live.inputDeviceId) {
+  if (typeof nodeGraphMvp.live.inputStreamFactory === "function") {
+    return nodeGraphMvp.live.inputStreamFactory({
+      context: nodeGraphMvp.live.context,
+      deviceId,
+    });
+  }
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      autoGainControl: false,
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      echoCancellation: false,
+      noiseSuppression: false,
+    },
+  });
+}
+
+function nodeGraphLiveOutputStartCancelled(serial) {
+  return serial !== nodeGraphMvp.live.outputToggleSerial || !nodeGraphMvp.live.outputEnabled;
+}
+
+function nodeGraphLiveInputIsUnderConstruction() {
+  return false;
+}
+
+function toggleNodeGraphLiveInput() {
+  nodeGraphMvp.live.inputActive = !nodeGraphMvp.live.inputActive;
+  const addedInputModule = nodeGraphMvp.live.inputActive
+    ? ensureNodeGraphLiveInputModule()
+    : false;
+  if (nodeGraphMvp.live.inputActive) {
+    const routeState = nodeGraphLiveInputRouteState();
+    setNodeGraphLiveInputStatus(routeState.state, routeState.message);
+    refreshNodeGraphLiveMicrophonePermissionState();
+  } else {
+    setNodeGraphLiveInputStatus("off");
+    setNodeGraphLiveMicStatus("off");
+  }
+  if (!addedInputModule) {
+    applyNodeGraphPatchToDom();
+    drawNodeGraphWires();
+    scheduleNodeGraphLivePlanSync();
+  }
+  renderNodeGraphLiveControls();
+  if (nodeGraphMvp.live.context && nodeGraphMvp.live.node) {
+    syncNodeGraphLiveInputSource().catch((error) => {
+      nodeGraphMvp.live.inputActive = false;
+      stopNodeGraphLiveInputSource();
+      setNodeGraphLiveInputStatus("blocked", error.message);
+      applyNodeGraphPatchToDom();
+      drawNodeGraphWires();
+      renderNodeGraphLiveControls();
+      setNodeGraphLiveBlockedError("input", error, { schedule: false });
+    });
+  }
+}
+
+async function setNodeGraphLiveOutputEnabled(enabled) {
+  if (enabled && nodeGraphEarProtectionIsTripped()) {
+    nodeGraphMvp.live.outputEnabled = false;
+    nodeGraphTripEarProtection({ source: "live" });
+    renderNodeGraphLiveControls(false);
+    renderNodeGraphExecutionPlanDebug();
+    return;
+  }
+  const outputEnabled = Boolean(enabled);
+  const serial = nodeGraphMvp.live.outputToggleSerial + 1;
+  nodeGraphMvp.live.outputToggleSerial = serial;
+  nodeGraphMvp.live.outputEnabled = outputEnabled;
+  renderNodeGraphLiveControls(Boolean(nodeGraphMvp.live.node));
+  renderNodeGraphExecutionPlanDebug();
+
+  if (!outputEnabled) {
+    if (nodeGraphMvp.live.node || nodeGraphMvp.live.context) {
+      await stopNodeGraphLiveAudio();
+    }
+    renderNodeGraphExecutionPlanDebug();
+    return;
+  }
+
+  if (nodeGraphMvp.live.node || nodeGraphMvp.live.context) {
+    await stopNodeGraphLiveAudio();
+  }
+  if (serial !== nodeGraphMvp.live.outputToggleSerial || !nodeGraphMvp.live.outputEnabled) {
+    return;
+  }
+  renderNodeGraphLiveControls();
+  renderNodeGraphExecutionPlanDebug();
+  await startNodeGraphLiveAudio(serial);
+  if (serial === nodeGraphMvp.live.outputToggleSerial) {
+    renderNodeGraphExecutionPlanDebug();
+  }
+}
+
+function toggleNodeGraphLiveOutput() {
+  if (nodeGraphEarProtectionIsTripped()) {
+    nodeGraphTripEarProtection({ source: "live" });
+    return;
+  }
+  setNodeGraphLiveOutputEnabled(!nodeGraphMvp.live.outputEnabled);
+}
+
+function renderNodeGraphLiveScriptBlock(event) {
+  const output = event.outputBuffer;
+  const frames = output.length;
+  const runtime = nodeGraphMvp.live.runtime;
+  if (!runtime) {
+    for (let channel = 0; channel < output.numberOfChannels; channel += 1) {
+      output.getChannelData(channel).fill(0);
+    }
+    return;
+  }
+  const sampleRate = event.playbackTime !== undefined
+    ? output.sampleRate
+    : nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate;
+  runtime.externalInput = {
+    left: event.inputBuffer?.numberOfChannels > 0
+      ? event.inputBuffer.getChannelData(0)
+      : null,
+    right: event.inputBuffer?.numberOfChannels > 1
+      ? event.inputBuffer.getChannelData(1)
+      : null,
+  };
+  const blockStartFrame = Number.isFinite(runtime.absoluteFrameCursor)
+    ? runtime.absoluteFrameCursor
+    : 0;
+  for (let frame = 0; frame < frames; frame += 1) {
+    runtime.absoluteFrame = blockStartFrame + frame;
+    const inputLeft = Number(runtime.externalInput.left?.[frame]) || 0;
+    const inputRight = Number(runtime.externalInput.right?.[frame]) || inputLeft;
+    nodeGraphMvp.live.inputMeterPeak = Math.max(
+      nodeGraphMvp.live.inputMeterPeak,
+      Math.abs(inputLeft),
+      Math.abs(inputRight),
+    );
+    nodeGraphMvp.live.inputMeterSquareSum += (inputLeft * inputLeft + inputRight * inputRight) * 0.5;
+    nodeGraphMvp.live.inputMeterSamples += 1;
+    const frameOutput = evaluateNodeGraphPlanFrame(runtime, sampleRate, frame, frames);
+    captureNodeGraphLiveModuleScopeFrame(runtime, sampleRate);
+    if (nodeGraphOutputSampleClipped(frameOutput.left)) {
+      runtime.meterClipCount += 1;
+    }
+    if (nodeGraphOutputSampleClipped(frameOutput.right)) {
+      runtime.meterClipCount += 1;
+    }
+    if (
+      nodeGraphOutputSampleTripsEarProtection(frameOutput.left) ||
+      nodeGraphOutputSampleTripsEarProtection(frameOutput.right)
+    ) {
+      runtime.meterProtectionMuteCount = (runtime.meterProtectionMuteCount || 0) + 1;
+      runtime.speakerProtectionPeak = Math.max(
+        Number(runtime.speakerProtectionPeak) || 0,
+        Number.isFinite(Number(frameOutput.left)) ? Math.abs(Number(frameOutput.left)) : Infinity,
+        Number.isFinite(Number(frameOutput.right)) ? Math.abs(Number(frameOutput.right)) : Infinity,
+      );
+      nodeGraphTripEarProtection({
+        source: "live output > 1.0",
+        protectionMuteCount: runtime.meterProtectionMuteCount,
+        protectionPeak: Number(runtime.speakerProtectionPeak) || 0,
+      });
+      for (let channel = 0; channel < output.numberOfChannels; channel += 1) {
+        output.getChannelData(channel)[frame] = 0;
+      }
+      continue;
+    }
+    const protectedFrame = runtime.earProtector?.protect(frameOutput.left, frameOutput.right) || {
+      left: frameOutput.left,
+      muted: false,
+      right: frameOutput.right,
+    };
+    if (protectedFrame.muted) {
+      runtime.meterProtectionMuteCount = (runtime.meterProtectionMuteCount || 0) + 1;
+      nodeGraphTripEarProtection({
+        source: "live",
+        protectionMuteCount: runtime.meterProtectionMuteCount,
+      });
+    }
+    const left = nodeGraphClampOutputSample(protectedFrame.left);
+    const right = nodeGraphClampOutputSample(protectedFrame.right);
+    const value = Math.max(Math.abs(left), Math.abs(right));
+    runtime.meterPeak = Math.max(runtime.meterPeak, Math.abs(value));
+    runtime.meterSquareSum += (left * left + right * right) * 0.5;
+    runtime.meterSamples += 1;
+    for (let channel = 0; channel < output.numberOfChannels; channel += 1) {
+      output.getChannelData(channel)[frame] = channel === 0 ? left : right;
+    }
+  }
+  runtime.absoluteFrameCursor = blockStartFrame + frames;
+  runtime.externalInput = null;
+  nodeGraphSetVisualControls(runtime.visualControls || { screenShake: 0 });
+  if (nodeGraphMvp.live.lastEvidence) {
+    nodeGraphMvp.live.lastEvidence.visualControls = {
+      ...(nodeGraphMvp.live.lastEvidence.visualControls || {}),
+      blue: Number(runtime.visualControls?.blue) || 0,
+      chromaAlpha: Number(runtime.visualControls?.chromaAlpha) || 0,
+      chromaDrift: Number(runtime.visualControls?.chromaDrift) || 0,
+      chromaHue: Number(runtime.visualControls?.chromaHue) || 0,
+      chromaLightness: Number(runtime.visualControls?.chromaLightness) || 0,
+      chromaSaturation: Number(runtime.visualControls?.chromaSaturation) || 0,
+      chromaSpread: Number(runtime.visualControls?.chromaSpread) || 0,
+      green: Number(runtime.visualControls?.green) || 0,
+      red: Number(runtime.visualControls?.red) || 0,
+      scopePaused: Number(runtime.visualControls?.scopePaused) || 0,
+      scopeTracesOff: Number(runtime.visualControls?.scopeTracesOff) || 0,
+      screenDim: Number(runtime.visualControls?.screenDim) || 0,
+      screenShake: Number(runtime.visualControls?.screenShake) || 0,
+      visualBloom: Number(runtime.visualControls?.visualBloom) || 0,
+      visualBrightness: Number(runtime.visualControls?.visualBrightness) || 0,
+      visualGlow: Number(runtime.visualControls?.visualGlow) || 0,
+      x: Number(runtime.visualControls?.x) || 0,
+      y: Number(runtime.visualControls?.y) || 0,
+    };
+  }
+  finishNodeGraphParameterSmoothing(runtime.smoothers);
+  runtime.meterCounter += frames;
+  if (runtime.meterCounter >= sampleRate / 10) {
+    setNodeGraphLiveInputMeter(
+      nodeGraphMvp.live.inputMeterPeak,
+      Math.sqrt(nodeGraphMvp.live.inputMeterSquareSum / Math.max(1, nodeGraphMvp.live.inputMeterSamples)),
+    );
+    setNodeGraphLiveMeter(
+      runtime.meterPeak,
+      Math.sqrt(runtime.meterSquareSum / Math.max(1, runtime.meterSamples)),
+      runtime.meterClipCount,
+      runtime.meterProtectionMuteCount || 0,
+      runtime.badNumberCount || 0,
+      0,
+      0,
+      0,
+    );
+    runtime.meterCounter = 0;
+    nodeGraphMvp.live.inputMeterPeak = 0;
+    nodeGraphMvp.live.inputMeterSamples = 0;
+    nodeGraphMvp.live.inputMeterSquareSum = 0;
+    runtime.meterClipCount = 0;
+    runtime.meterProtectionMuteCount = 0;
+    runtime.badNumberCount = 0;
+    runtime.meterPeak = 0;
+    runtime.meterSamples = 0;
+    runtime.meterSquareSum = 0;
+  }
+}
+
+function nodeGraphSetLivePlanRunningStatus(plan) {
+  setNodeGraphLiveOutputMuted(false);
+  setNodeGraphLiveStatus("running", "good");
+  clearNodeGraphLiveStatusTitle();
+  setNodeGraphLiveScheduleStatus(
+    nodeGraphScheduleText(
+      plan.order,
+      [],
+      plan.feedbackConnections,
+      plan.feedbackModulations,
+    ),
+    "good",
+  );
+  renderNodeGraphLiveControls(true);
+}
+
+function queueNodeGraphLivePatchCommand(command, nodeId = "") {
+  const direction = command === "nextPatch" ? 1 : command === "previousPatch" ? -1 : 0;
+  if (!direction) {
+    return;
+  }
+  const key = `${command}:${nodeId || ""}`;
+  if (!nodeGraphMvp.live.patchCommandQueue) {
+    nodeGraphMvp.live.patchCommandQueue = new Set();
+  }
+  if (nodeGraphMvp.live.patchCommandQueue.has(key)) {
+    return;
+  }
+  nodeGraphMvp.live.patchCommandQueue.add(key);
+  window.setTimeout(async () => {
+    nodeGraphMvp.live.patchCommandQueue?.delete(key);
+    await loadAdjacentNodeGraphSavedPatch(direction);
+  }, 0);
+}
+
+function handleNodeGraphLiveWorkletMessage(event) {
+  const message = event.data || {};
+  if (message.type === "meter") {
+    if (message.sessionId !== nodeGraphMvp.live.sessionId || !nodeGraphMvp.live.node) {
+      return;
+    }
+    setNodeGraphLiveInputMeter(
+      Number(message.inputPeak) || 0,
+      Number(message.inputRms) || 0,
+    );
+    setNodeGraphLiveMeter(
+      Number(message.peak) || 0,
+      Number(message.rms) || 0,
+      Number(message.clipCount) || 0,
+      Number(message.protectionMuteCount) || 0,
+      Number(message.badNumberCount) || 0,
+      Number(message.overrunCount) || 0,
+      Number(message.maxBlockProcessMs) || 0,
+      Number(message.maxBlockBudgetRatio) || 0,
+    );
+    if (typeof syncNodeGraphAudioPlayerRuntimeStatus === "function") {
+      syncNodeGraphAudioPlayerRuntimeStatus({
+        nodeId: message.audioPlayerNodeId || "",
+        nodeIds: message.audioPlayerNodeIds || [],
+        peak: Number(message.audioPlayerPeak) || 0,
+        phase: Number(message.audioPlayerPhase) || 0,
+        reason: message.audioPlayerReason || "",
+        samples: Number(message.audioPlayerSamples) || 0,
+      });
+    }
+    if (Number(message.badNumberCount) > 0) {
+      nodeGraphRecordBadValueEvent({
+        count: Number(message.badNumberCount) || 1,
+        engine: "worklet",
+        force: Boolean(message.lastBadValueNodeId),
+        nodeId: message.lastBadValueNodeId || "",
+        reason: message.lastBadValueReason || "bad",
+        source: message.lastBadValueSource || "worklet meter",
+      });
+    }
+    if (Number(message.protectionMuteCount) > 0) {
+      nodeGraphTripEarProtection({
+        nodeId: message.protectionNodeId || "",
+        protectionPeak: Number(message.protectionPeak) || 0,
+        source: "worklet",
+        protectionMuteCount: Number(message.protectionMuteCount) || 0,
+      });
+    }
+  } else if (message.type === "nativeModuleStatus") {
+    setNodeGraphLiveEvidence("native-module", message);
+    if (message.status && message.status !== "ready") {
+      setNodeGraphLivePlanStatus(
+        `${message.name || "native module"} ${message.status}`,
+        "warn",
+      );
+    }
+  } else if (message.type === "patchCommand") {
+    if (message.sessionId !== nodeGraphMvp.live.sessionId || !nodeGraphMvp.live.node) {
+      return;
+    }
+    queueNodeGraphLivePatchCommand(message.command, message.nodeId || "");
+  } else if (message.type === "planApplied") {
+    if (
+      message.sessionId !== nodeGraphMvp.live.sessionId ||
+      message.planSerial !== nodeGraphMvp.live.planSerial ||
+      !nodeGraphMvp.live.node
+    ) {
+      return;
+    }
+    setNodeGraphLiveEvidence("plan-applied", message);
+    setNodeGraphLivePlanStatus(nodeGraphLivePlanAppliedStatusText(message), "good");
+    setNodeGraphLivePlanTitle(nodeGraphLivePlanScheduleTitle(message.order));
+  } else if (message.type === "scope") {
+    if (message.sessionId !== nodeGraphMvp.live.sessionId || !nodeGraphMvp.live.node) {
+      return;
+    }
+    pushNodeGraphLiveModuleScopeSnapshot(message.values || [], {
+      patchFingerprint: message.patchFingerprint || nodeGraphPatchFingerprint(),
+      sampleRate: message.sampleRate || nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate,
+    });
+  } else if (message.type === "visualControls") {
+    if (message.sessionId !== nodeGraphMvp.live.sessionId || !nodeGraphMvp.live.node) {
+      return;
+    }
+    nodeGraphSetVisualControls({
+      blue: Number(message.blue) || 0,
+      chromaAlpha: Number(message.chromaAlpha) || 0,
+      chromaDrift: Number(message.chromaDrift) || 0,
+      chromaHue: Number(message.chromaHue) || 0,
+      chromaLightness: Number(message.chromaLightness) || 0,
+      chromaSaturation: Number(message.chromaSaturation) || 0,
+      chromaSpread: Number(message.chromaSpread) || 0,
+      green: Number(message.green) || 0,
+      red: Number(message.red) || 0,
+      scopePaused: Number(message.scopePaused) || 0,
+      scopeTracesOff: Number(message.scopeTracesOff) || 0,
+      screenDim: Number(message.screenDim) || 0,
+      screenShake: Number(message.screenShake) || 0,
+      visualBloom: Number(message.visualBloom) || 0,
+      visualBrightness: Number(message.visualBrightness) || 0,
+      visualGlow: Number(message.visualGlow) || 0,
+      x: Number(message.x) || 0,
+      y: Number(message.y) || 0,
+    });
+    if (nodeGraphMvp.live.lastEvidence) {
+      nodeGraphMvp.live.lastEvidence.visualControls = {
+        ...(nodeGraphMvp.live.lastEvidence.visualControls || {}),
+        blue: Number(message.blue) || 0,
+        chromaAlpha: Number(message.chromaAlpha) || 0,
+        chromaDrift: Number(message.chromaDrift) || 0,
+        chromaHue: Number(message.chromaHue) || 0,
+        chromaLightness: Number(message.chromaLightness) || 0,
+        chromaSaturation: Number(message.chromaSaturation) || 0,
+        chromaSpread: Number(message.chromaSpread) || 0,
+        green: Number(message.green) || 0,
+        red: Number(message.red) || 0,
+        scopePaused: Number(message.scopePaused) || 0,
+        scopeTracesOff: Number(message.scopeTracesOff) || 0,
+        screenDim: Number(message.screenDim) || 0,
+        screenShake: Number(message.screenShake) || 0,
+        visualBloom: Number(message.visualBloom) || 0,
+        visualBrightness: Number(message.visualBrightness) || 0,
+        visualGlow: Number(message.visualGlow) || 0,
+        x: Number(message.x) || 0,
+        y: Number(message.y) || 0,
+      };
+    }
+  } else if (message.type === "paramsApplied") {
+    if (
+      message.sessionId !== nodeGraphMvp.live.sessionId ||
+      message.planSerial !== nodeGraphMvp.live.planSerial ||
+      !nodeGraphMvp.live.node
+    ) {
+      return;
+    }
+    setNodeGraphLiveEvidence("params-applied", message);
+    setNodeGraphLivePlanStatus(nodeGraphLiveParametersAppliedStatusText(message), "good");
+    setNodeGraphLivePlanTitle(nodeGraphLivePlanScheduleTitle(message.order));
+  }
+}
+
+function nodeGraphLiveClapNodes(plan = {}) {
+  return (plan.nodes || []).filter((node) => node?.type === "clapPlugin");
+}
+
+function nodeGraphLiveClapNodeTitle(node) {
+  return nodeGraphPatchNodeTitle(nodeGraphPatchNode(node?.id) || node);
+}
+
+function assertNodeGraphLivePlanSupportsClap(plan = {}) {
+  const clapNodes = nodeGraphLiveClapNodes(plan);
+  if (!clapNodes.length) {
+    return;
+  }
+  const names = clapNodes.map((node) => nodeGraphLiveClapNodeTitle(node)).join(", ");
+  const error = new Error(`Live Audio does not route CLAP Plugin nodes yet. Use Render Sample for CLAP processing: ${names}`);
+  error.issues = clapNodes.map((node) => `Live Audio CLAP routing unavailable: ${nodeGraphLiveClapNodeTitle(node)}`);
+  throw error;
+}
+
+function nodeGraphLivePlanErrorIssues(error) {
+  return Array.isArray(error?.issues) && error.issues.length
+    ? error.issues.map((issue) => String(issue))
+    : [String(error?.message || error || "unknown live plan failure")];
+}
+
+function nodeGraphLivePlanIssueRemovesOutputRoute(issue) {
+  return issue === "output node missing" || issue === "missing Output speaker input";
+}
+
+function nodeGraphCurrentPatchHasSpeakerOutputRoute() {
+  try {
+    const plan = compileNodeGraphExecutionPlan(nodeGraphMvp.patch);
+    const issues = Array.isArray(plan?.issues) ? plan.issues.map((issue) => String(issue)) : [];
+    return Boolean(plan?.speakerOutputActive) && !issues.some(nodeGraphLivePlanIssueRemovesOutputRoute);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function nodeGraphShouldPreservePreviousLivePlanAfterError(error) {
+  const issues = nodeGraphLivePlanErrorIssues(error);
+  if (issues.some(nodeGraphLivePlanIssueRemovesOutputRoute)) {
+    return false;
+  }
+  return nodeGraphCurrentPatchHasSpeakerOutputRoute();
+}
+
+function nodeGraphLivePlanShapeSignature(plan = {}) {
+  return JSON.stringify({
+    nodes: (Array.isArray(plan.nodes) ? plan.nodes : []).map((node) => [node.id, node.type]),
+    order: Array.isArray(plan.order) ? plan.order : [],
+    outputNode: plan.outputNode || "output",
+    samples: (Array.isArray(plan.samples) ? plan.samples : []).map((sample) => sample?.id || ""),
+    scopeCaptureNodeIds: Array.isArray(plan.scopeCaptureNodeIds) ? plan.scopeCaptureNodeIds : [],
+    visualSinks: (Array.isArray(plan.visualSinks) ? plan.visualSinks : []).map((sink) => [
+      sink.nodeId,
+      sink.displayType,
+      (Array.isArray(sink.bufferedInputs) ? sink.bufferedInputs : []).join(","),
+    ]),
+  });
+}
+
+function nodeGraphLiveConnectionUpdatePayload(plan = {}, audio = {}) {
+  return {
+    connections: Array.isArray(plan.connections) ? plan.connections : [],
+    engineSampleRate: audio.clampedEngineSampleRate,
+    graphConnections: Array.isArray(plan.graphConnections) ? plan.graphConnections : [],
+    modulations: Array.isArray(plan.modulations) ? plan.modulations : [],
+    outputNode: plan.outputNode || "output",
+    oversamplingRatio: audio.oversamplingRatio,
+    patchFingerprint: plan.patchFingerprint,
+    planSerial: nodeGraphMvp.live.planSerial,
+    sampleRate: nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate,
+    scopeCaptureNodeIds: Array.isArray(plan.scopeCaptureNodeIds) ? plan.scopeCaptureNodeIds : [],
+    sessionId: nodeGraphMvp.live.sessionId,
+    type: "setConnections",
+    visualSinks: Array.isArray(plan.visualSinks) ? plan.visualSinks : [],
+  };
+}
+
+async function sendNodeGraphLivePlan() {
+  if (!nodeGraphMvp.live.node && !nodeGraphMvp.live.context) {
+    return;
+  }
+  const hadLivePlan = Boolean(
+    nodeGraphMvp.live.planEvidence ||
+    nodeGraphMvp.live.runtime ||
+    nodeGraphMvp.live.planSerial > 0 ||
+    nodeGraphMvp.live.activeNodeIds?.size,
+  );
+
+  try {
+    const plan = nodeGraphBuildLivePlan();
+    if (typeof nodeGraphEnsureLiveSamplesForPlan === "function") {
+      await nodeGraphEnsureLiveSamplesForPlan(plan, nodeGraphMvp.patch);
+    }
+    assertNodeGraphLivePlanSupportsClap(plan);
+    const audio = nodeGraphAudioDerivation(nodeGraphMvp.patch);
+    const planShapeSignature = nodeGraphLivePlanShapeSignature(plan);
+    const canSendConnectionUpdate = Boolean(
+      hadLivePlan &&
+      nodeGraphMvp.live.planShapeSignature &&
+      nodeGraphMvp.live.planShapeSignature === planShapeSignature,
+    );
+    nodeGraphMvp.live.activeNodeIds = new Set(plan.order);
+    beginNodeGraphLiveModuleScopeCapture(plan, {
+      sampleRate: nodeGraphMvp.live.usesWorklet
+        ? audio.clampedEngineSampleRate
+        : nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate,
+    });
+    nodeGraphMvp.live.planSerial += 1;
+    nodeGraphMvp.live.planEvidence = nodeGraphLivePlanEvidenceDetails(plan, {
+      engineSampleRate: audio.clampedEngineSampleRate,
+      oversamplingRatio: audio.oversamplingRatio,
+      planSerial: nodeGraphMvp.live.planSerial,
+      sampleRate: nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate,
+    });
+    if (nodeGraphMvp.live.usesWorklet) {
+      setNodeGraphLiveEvidence("plan-sent", nodeGraphMvp.live.planEvidence);
+      setNodeGraphLivePlanStatus(nodeGraphLivePlanSentStatusText(), "warn");
+      setNodeGraphLivePlanTitle(nodeGraphLivePlanScheduleTitle(plan.order));
+      if (canSendConnectionUpdate) {
+        nodeGraphMvp.live.node?.port?.postMessage(nodeGraphLiveConnectionUpdatePayload(plan, audio));
+      } else {
+        nodeGraphMvp.live.node?.port?.postMessage({
+          engineSampleRate: audio.clampedEngineSampleRate,
+          oversamplingRatio: audio.oversamplingRatio,
+          plan,
+          patchFingerprint: plan.patchFingerprint,
+          planSerial: nodeGraphMvp.live.planSerial,
+          sampleRate: nodeGraphMvp.live.context?.sampleRate || nodeGraphMvp.sampleRate,
+          sessionId: nodeGraphMvp.live.sessionId,
+          type: "setPlan",
+        });
+      }
+    } else if (nodeGraphMvp.live.runtime) {
+      if (canSendConnectionUpdate && typeof updateNodeGraphLiveRuntimeConnections === "function") {
+        updateNodeGraphLiveRuntimeConnections(nodeGraphMvp.live.runtime, plan);
+      } else {
+        updateNodeGraphLiveRuntimePlan(nodeGraphMvp.live.runtime, plan);
+      }
+      setNodeGraphLiveEvidence("plan-applied", nodeGraphMvp.live.planEvidence);
+      setNodeGraphLivePlanStatus(nodeGraphLivePlanStatusText(plan), "good");
+      setNodeGraphLivePlanTitle(nodeGraphLivePlanScheduleTitle(plan.order));
+    } else {
+      nodeGraphMvp.live.runtime = createNodeGraphLiveRuntime(plan);
+      setNodeGraphLiveEvidence("plan-applied", nodeGraphMvp.live.planEvidence);
+      setNodeGraphLivePlanStatus(nodeGraphLivePlanStatusText(plan), "good");
+      setNodeGraphLivePlanTitle(nodeGraphLivePlanScheduleTitle(plan.order));
+    }
+    nodeGraphSetLivePlanRunningStatus(plan);
+    nodeGraphMvp.live.planShapeSignature = planShapeSignature;
+  } catch (error) {
+    const issues = nodeGraphLivePlanErrorIssues(error);
+    error.issues = issues;
+    const canPreservePlan = hadLivePlan && nodeGraphShouldPreservePreviousLivePlanAfterError(error);
+    if (!canPreservePlan) {
+      setNodeGraphLiveOutputMuted(true);
+      nodeGraphMvp.live.runtime = null;
+      nodeGraphMvp.live.node?.port?.postMessage({ type: "stop", sessionId: nodeGraphMvp.live.sessionId, planSerial: nodeGraphMvp.live.planSerial });
+    }
+    setNodeGraphLiveBlockedError("plan", error, { preservePreviousPlan: canPreservePlan });
+  }
+}
+
+function sendNodeGraphLiveParameterUpdate() {
+  if (!nodeGraphMvp.live.node && !nodeGraphMvp.live.context) {
+    return;
+  }
+
+  try {
+    const nodes = nodeGraphBuildLiveParameterNodes(nodeGraphMvp.live.activeNodeIds);
+    const patchFingerprint = nodeGraphPatchFingerprint();
+    const now = performance.now();
+    const previous = Number(nodeGraphMvp.live.lastParameterUpdateTime) || 0;
+    const measuredSeconds = previous > 0 ? (now - previous) / 1000 : nodeGraphMvp.live.autoSmoothingSeconds;
+    nodeGraphMvp.live.lastParameterUpdateTime = now;
+    if (!nodeGraphMvp.live.autoSmoothingManual) {
+      nodeGraphMvp.live.autoSmoothingSeconds = clampNodeGraphAutoSmoothingSeconds(
+        (Number(nodeGraphMvp.live.autoSmoothingSeconds) || nodeGraphAutoSmoothingDefaultSeconds) * 0.82 +
+        clampNodeGraphAutoSmoothingSeconds(measuredSeconds) * 0.18,
+      );
+    } else {
+      nodeGraphMvp.live.autoSmoothingSeconds = clampNodeGraphAutoSmoothingSeconds(nodeGraphMvp.live.autoSmoothingSeconds);
+    }
+    const autoSmoothingSeconds = nodeGraphMvp.live.autoSmoothingSeconds;
+    syncNodeGraphGlobalSmoothingControl();
+    updateNodeGraphLiveModuleScopeFingerprint(patchFingerprint);
+    nodeGraphMvp.live.planSerial += 1;
+    if (nodeGraphMvp.live.usesWorklet) {
+      setNodeGraphLiveEvidence("params-sent", {
+        autoSmoothingSeconds,
+        nodeCount: nodes.length,
+        parameterCount: nodeGraphLiveParameterCount(nodes),
+        patchFingerprint,
+        planSerial: nodeGraphMvp.live.planSerial,
+      });
+      setNodeGraphLivePlanStatus(nodeGraphLiveParametersSentStatusText(nodes), "warn");
+      nodeGraphMvp.live.node?.port?.postMessage({
+        nodes,
+        autoSmoothingSeconds,
+        patchFingerprint,
+        planSerial: nodeGraphMvp.live.planSerial,
+        sessionId: nodeGraphMvp.live.sessionId,
+        type: "setParams",
+      });
+    } else if (nodeGraphMvp.live.runtime) {
+      nodeGraphMvp.live.runtime.autoSmoothingSeconds = autoSmoothingSeconds;
+      updateNodeGraphLiveRuntimeParameters(nodeGraphMvp.live.runtime, nodes);
+      setNodeGraphLiveEvidence("params-applied", {
+        autoSmoothingSeconds,
+        nodeCount: nodes.length,
+        parameterCount: nodeGraphLiveParameterCount(nodes),
+        patchFingerprint,
+        planSerial: nodeGraphMvp.live.planSerial,
+      });
+      setNodeGraphLivePlanStatus(
+        nodeGraphLiveParametersAppliedStatusText({
+          nodeCount: nodes.length,
+          parameterCount: nodeGraphLiveParameterCount(nodes),
+          patchFingerprint,
+          planSerial: nodeGraphMvp.live.planSerial,
+        }),
+        "good",
+      );
+    }
+    setNodeGraphLiveStatus("running", "good");
+    clearNodeGraphLiveStatusTitle();
+  } catch (error) {
+    setNodeGraphLiveBlockedError("params", error, { schedule: false });
+  }
+}
+
+function sendNodeGraphLiveMidiKeyboardSignal(signal = nodeGraphMvp.midiKeyboardSignal) {
+  const payload = signal && typeof signal === "object" ? { ...signal } : null;
+  if (nodeGraphMvp.live.runtime) {
+    nodeGraphMvp.live.runtime.midiKeyboardSignal = payload;
+  }
+  if (nodeGraphMvp.live.usesWorklet && nodeGraphMvp.live.node?.port) {
+    nodeGraphMvp.live.node.port.postMessage({
+      signal: payload,
+      type: "setMidiKeyboardSignal",
+    });
+  }
+}
+
+function sendNodeGraphLiveMacroControls(values = nodeGraphMvp.macroControls) {
+  const payload = Array.from({ length: 10 }, (_, index) => (
+    Math.max(0, Math.min(1, Number(values?.[index]) || 0))
+  ));
+  if (nodeGraphMvp.live.runtime) {
+    nodeGraphMvp.live.runtime.macroControls = payload;
+  }
+  if (nodeGraphMvp.live.usesWorklet && nodeGraphMvp.live.node?.port) {
+    nodeGraphMvp.live.node.port.postMessage({
+      values: payload,
+      type: "setMacroControls",
+    });
+  }
+}
+
+function nodeGraphPitchModWheelPayload() {
+  return {
+    mod: Math.max(0, Math.min(1, Number(nodeGraphMvp.modWheelSignal) || 0)),
+    pitch: Math.max(-1, Math.min(1, Number(nodeGraphMvp.pitchWheelSignal) || 0)),
+  };
+}
+
+function sendNodeGraphLivePitchModWheelSignal(signal = nodeGraphPitchModWheelPayload()) {
+  const source = signal && typeof signal === "object" ? signal : {};
+  const pitch = Number(source.pitch);
+  const payload = {
+    mod: Math.max(0, Math.min(1, Number(source.mod) || 0)),
+    pitch: Math.max(-1, Math.min(1, Number.isFinite(pitch) ? pitch : 0)),
+  };
+  if (nodeGraphMvp.live.runtime) {
+    nodeGraphMvp.live.runtime.pitchModWheelSignal = payload;
+  }
+  if (nodeGraphMvp.live.usesWorklet && nodeGraphMvp.live.node?.port) {
+    nodeGraphMvp.live.node.port.postMessage({
+      signal: payload,
+      type: "setPitchModWheelSignal",
+    });
+  }
+}
+
+function nodeGraphGlobalSmoothingSamples() {
+  return nodeGraphSmoothingSamplesFromSeconds(
+    nodeGraphMvp?.live?.autoSmoothingSeconds ?? nodeGraphAutoSmoothingDefaultSeconds,
+  );
+}
+
+function nodeGraphGlobalSmoothingSeconds() {
+  return clampNodeGraphAutoSmoothingSeconds(
+    nodeGraphMvp?.live?.autoSmoothingSeconds ?? nodeGraphAutoSmoothingDefaultSeconds,
+  );
+}
+
+function formatNodeGraphGlobalSmoothingSeconds(seconds) {
+  const value = clampNodeGraphAutoSmoothingSeconds(seconds);
+  if (typeof limit_decimals === "function") {
+    return limit_decimals(String(value), 5, 3, 4, false);
+  }
+  return value.toFixed(4).replace(/0$/, "");
+}
+
+function syncNodeGraphGlobalSmoothingControl(options = {}) {
+  const input = document.getElementById("nodeSceneGlobalSmoothingSeconds");
+  if (!input) {
+    return;
+  }
+  if (!options.force && document.activeElement === input) {
+    return;
+  }
+  input.value = formatNodeGraphGlobalSmoothingSeconds(nodeGraphGlobalSmoothingSeconds());
+}
+
+function setNodeGraphGlobalSmoothingSamples(samples, options = {}) {
+  setNodeGraphGlobalSmoothingSeconds(nodeGraphSmoothingSecondsFromSamples(samples), options);
+}
+
+function setNodeGraphGlobalSmoothingSeconds(seconds, options = {}) {
+  const normalized = clampNodeGraphAutoSmoothingSeconds(seconds);
+  nodeGraphMvp.live.autoSmoothingSeconds = normalized;
+  nodeGraphMvp.live.autoSmoothingManual = options.manual !== false;
+  syncNodeGraphGlobalSmoothingControl({ force: true });
+  scheduleNodeGraphLiveParameterSync();
+  if (typeof saveNodeGraphWorkspaceViewToUserSettings === "function") {
+    saveNodeGraphWorkspaceViewToUserSettings({ status: false });
+  }
+}
+
+function nodeGraphGlobalSmoothingDragStep(event) {
+  const multiplier = typeof nodeGraphNumericDragMultiplier === "function"
+    ? nodeGraphNumericDragMultiplier(event)
+    : 1;
+  return 0.01 * multiplier;
+}
+
+function handleNodeGraphGlobalSmoothingSecondsChange() {
+  const input = document.getElementById("nodeSceneGlobalSmoothingSeconds");
+  if (!input) {
+    return;
+  }
+  setNodeGraphGlobalSmoothingSeconds(input.value);
+  input.readOnly = true;
+}
+
+function handleNodeGraphGlobalSmoothingSecondsKeydown(event) {
+  if (event.key !== "Enter") {
+    return;
+  }
+  event.preventDefault();
+  handleNodeGraphGlobalSmoothingSecondsChange();
+  event.currentTarget?.blur?.();
+}
+
+function beginNodeGraphGlobalSmoothingSecondsEdit(event) {
+  const input = document.getElementById("nodeSceneGlobalSmoothingSeconds");
+  if (!input) {
+    return;
+  }
+  input.readOnly = false;
+  input.focus();
+  input.select();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function beginNodeGraphGlobalSmoothingSecondsDrag(event) {
+  const input = document.getElementById("nodeSceneGlobalSmoothingSeconds");
+  if (!input || event.button > 0 || event.detail > 1) {
+    return;
+  }
+  if (typeof nodeGraphNumericModifierReserved === "function" && nodeGraphNumericModifierReserved(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  const resetToDefaultOnClick = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+  nodeGraphMvp.globalSmoothingSecondsDragging = {
+    input,
+    moved: false,
+    pointerId: event.pointerId ?? null,
+    resetToDefaultOnClick,
+    startValue: nodeGraphGlobalSmoothingSeconds(),
+    startX: event.clientX,
+    startY: event.clientY,
+    step: nodeGraphGlobalSmoothingDragStep(event),
+  };
+  input.readOnly = true;
+  input.classList.add("value-dragging");
+  input.closest(".scene-context-global-smoothing-control")?.classList.add("value-dragging");
+  if (event.pointerId !== undefined) {
+    input.setPointerCapture?.(event.pointerId);
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function dragNodeGraphGlobalSmoothingSeconds(event) {
+  const drag = nodeGraphMvp.globalSmoothingSecondsDragging;
+  if (
+    !drag ||
+    (drag.pointerId !== null && event.pointerId !== undefined && drag.pointerId !== event.pointerId)
+  ) {
+    return;
+  }
+  const horizontalDelta = event.clientX - drag.startX;
+  const verticalDelta = drag.startY - event.clientY;
+  if (Math.abs(horizontalDelta) > 1 || Math.abs(verticalDelta) > 1) {
+    drag.moved = true;
+  }
+  if (drag.resetToDefaultOnClick && !drag.moved) {
+    event.preventDefault();
+    return;
+  }
+  setNodeGraphGlobalSmoothingSeconds(drag.startValue + (horizontalDelta + verticalDelta) * drag.step);
+  event.preventDefault();
+}
+
+function endNodeGraphGlobalSmoothingSecondsDrag(event) {
+  const drag = nodeGraphMvp.globalSmoothingSecondsDragging;
+  if (
+    !drag ||
+    (drag.pointerId !== null && event.pointerId !== undefined && drag.pointerId !== event.pointerId)
+  ) {
+    return;
+  }
+  if (drag.resetToDefaultOnClick && !drag.moved) {
+    setNodeGraphGlobalSmoothingSeconds(nodeGraphDefaultSmoothingBlockSeconds());
+  }
+  drag.input.classList.remove("value-dragging");
+  drag.input.closest(".scene-context-global-smoothing-control")?.classList.remove("value-dragging");
+  drag.input.readOnly = true;
+  if (event.pointerId !== undefined && drag.input.hasPointerCapture?.(event.pointerId)) {
+    drag.input.releasePointerCapture(event.pointerId);
+  }
+  nodeGraphMvp.globalSmoothingSecondsDragging = null;
+  event.preventDefault();
+}
+
+function scheduleNodeGraphLiveSync(mode = "plan") {
+  if (!nodeGraphMvp.live.node || nodeGraphMvp.live.syncFrame || nodeGraphMvp.live.syncTimer) {
+    if (mode === "plan") {
+      nodeGraphMvp.live.syncMode = "plan";
+    }
+    return;
+  }
+  nodeGraphMvp.live.syncMode = mode;
+  const flush = () => flushNodeGraphLivePlanSync();
+  nodeGraphMvp.live.syncFrame = window.requestAnimationFrame(flush);
+  nodeGraphMvp.live.syncTimer = window.setTimeout(flush, 50);
+}
+
+function scheduleNodeGraphLivePlanSync() {
+  scheduleNodeGraphLiveSync("plan");
+}
+
+function scheduleNodeGraphLiveParameterSync() {
+  scheduleNodeGraphLiveSync("params");
+}
+
+function clearNodeGraphLivePlanSync() {
+  if (nodeGraphMvp.live.syncFrame) {
+    window.cancelAnimationFrame(nodeGraphMvp.live.syncFrame);
+    nodeGraphMvp.live.syncFrame = 0;
+  }
+  if (nodeGraphMvp.live.syncTimer) {
+    window.clearTimeout(nodeGraphMvp.live.syncTimer);
+    nodeGraphMvp.live.syncTimer = 0;
+  }
+}
+
+function flushNodeGraphLivePlanSync() {
+  const mode = nodeGraphMvp.live.syncMode || "plan";
+  nodeGraphMvp.live.syncMode = "";
+  clearNodeGraphLivePlanSync();
+  if (mode === "params") {
+    sendNodeGraphLiveParameterUpdate();
+  } else {
+    sendNodeGraphLivePlan();
+  }
+}
+
+async function stopNodeGraphLiveAudio() {
+  clearNodeGraphLivePlanSync();
+  stopNodeGraphLiveInputSource();
+  const liveNode = nodeGraphMvp.live.node;
+  const liveContext = nodeGraphMvp.live.context;
+  const scriptNode = nodeGraphMvp.live.scriptNode;
+  nodeGraphMvp.live.node = null;
+  nodeGraphMvp.live.context = null;
+  nodeGraphMvp.live.meterGain = null;
+  nodeGraphMvp.live.outputGain = null;
+  nodeGraphMvp.live.activeNodeIds = new Set();
+  nodeGraphMvp.live.lastEvidence = null;
+  nodeGraphMvp.live.lastParameterUpdateTime = 0;
+  nodeGraphMvp.live.planEvidence = null;
+  nodeGraphMvp.live.planSerial = 0;
+  nodeGraphMvp.live.autoSmoothingSeconds = clampNodeGraphAutoSmoothingSeconds(nodeGraphMvp.live.autoSmoothingSeconds);
+  nodeGraphMvp.live.runtime = null;
+  nodeGraphMvp.live.scriptNode = null;
+  nodeGraphMvp.live.sessionId += 1;
+  nodeGraphMvp.live.syncMode = "";
+  nodeGraphMvp.live.usesWorklet = false;
+  if (typeof clearNodeGraphModuleScopeBuffers === "function") {
+    clearNodeGraphModuleScopeBuffers({
+      preserveBuffers: true,
+      preserveDisplay: true,
+    });
+  }
+  nodeGraphClearVisualControls();
+
+  try {
+    liveNode?.port?.postMessage({ type: "stop", sessionId: nodeGraphMvp.live.sessionId, planSerial: nodeGraphMvp.live.planSerial });
+    liveNode?.disconnect();
+    scriptNode?.disconnect();
+  } catch (_error) {
+    // Live shutdown is best effort; a disconnected worklet is already silent.
+  }
+  if (liveContext && liveContext.state !== "closed") {
+    await liveContext.close();
+  }
+  setNodeGraphLiveStatus("stopped");
+  setNodeGraphLiveEvidence("stopped");
+  setNodeGraphLiveEngineStatus();
+  setNodeGraphLiveEngineTitle();
+  setNodeGraphLivePlanStatus();
+  setNodeGraphLivePlanTitle();
+  setNodeGraphLiveInputMeter();
+  setNodeGraphLiveMeter();
+  setNodeGraphLiveScheduleStatus("schedule stopped");
+  clearNodeGraphLiveStatusTitle();
+  renderNodeGraphLiveControls(false);
+}
+
+async function createNodeGraphLiveWorkletNode(context) {
+  if (!context.audioWorklet || typeof AudioWorkletNode === "undefined") {
+    throw new Error("AudioWorklet unavailable");
+  }
+  await nodeGraphLiveAwaitStartup(
+    context.audioWorklet.addModule("./public/node-live-audio-worklet.js?v=metronome-1"),
+    "AudioWorklet startup timed out",
+  );
+  const workletNode = new AudioWorkletNode(
+    context,
+    "node-live-audio-processor",
+    {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+    },
+  );
+  workletNode.port.onmessage = handleNodeGraphLiveWorkletMessage;
+  workletNode.onprocessorerror = () => {
+    setNodeGraphLiveProcessorError("AudioWorklet processor crashed");
+  };
+  sendNodeGraphLiveNativeModules(workletNode);
+  return workletNode;
+}
+
+function nodeGraphLiveAwaitStartup(promise, message = "live audio startup timed out", timeoutMs = 5000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
+}
+
+function createNodeGraphLiveScriptProcessorNode(context, plan) {
+  const scriptNode = context.createScriptProcessor(nodeGraphAudioBlockSize, 2, 2);
+  scriptNode.onaudioprocess = renderNodeGraphLiveScriptBlock;
+  nodeGraphMvp.live.runtime = createNodeGraphLiveRuntime(plan);
+  nodeGraphMvp.live.runtime.earProtector = createNodeGraphEarProtector(context.sampleRate);
+  nodeGraphMvp.live.scriptNode = scriptNode;
+  return scriptNode;
+}
+
+function stopNodeGraphLiveInputSource() {
+  const source = nodeGraphMvp.live.inputSource;
+  const stream = nodeGraphMvp.live.inputStream;
+  nodeGraphMvp.live.inputSource = null;
+  nodeGraphMvp.live.inputStream = null;
+  cleanupNodeGraphMockInputStream();
+  try {
+    source?.disconnect();
+  } catch (_error) {
+    // Already disconnected input sources are harmless.
+  }
+  for (const track of stream?.getTracks?.() || []) {
+    track.stop();
+  }
+  setNodeGraphLiveInputStatus(
+    nodeGraphMvp.live.inputActive ? nodeGraphLiveInputRouteState().state : "off",
+    nodeGraphMvp.live.inputActive
+      ? nodeGraphLiveInputRouteState().message
+      : ""
+  );
+  setNodeGraphLiveMicStatus(
+    nodeGraphMvp.live.inputActive ? "armed" : "off",
+    nodeGraphMvp.live.inputActive
+      ? "Start OUTPUT to request browser microphone permission."
+      : ""
+  );
+}
+
+async function startNodeGraphLiveInputSource() {
+  const context = nodeGraphMvp.live.context;
+  const liveNode = nodeGraphMvp.live.node;
+  if (!context || !liveNode || nodeGraphMvp.live.inputStream) {
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const message = window.isSecureContext
+      ? "Browser audio input unavailable."
+      : "Browser audio input needs HTTPS or localhost.";
+    setNodeGraphLiveInputStatus("blocked", message);
+    setNodeGraphLiveMicStatus("blocked", message);
+    const error = new Error(message);
+    error.nodeGraphInputError = true;
+    throw error;
+  }
+  setNodeGraphLiveInputStatus("requesting", "Requesting browser microphone permission.");
+  setNodeGraphLiveMicStatus("requesting", "Requesting browser microphone permission.");
+  try {
+    let stream = null;
+    try {
+      stream = await requestNodeGraphLiveInputStream();
+    } catch (error) {
+      if (!nodeGraphMvp.live.inputDeviceId || !nodeGraphLiveInputDeviceIsUnavailable(error)) {
+        throw error;
+      }
+      nodeGraphMvp.live.inputDeviceId = "";
+      setNodeGraphLiveInputStatus("requesting", "Selected input unavailable; retrying default input.");
+      setNodeGraphLiveMicStatus("requesting", "Selected input unavailable; retrying default input.");
+      await refreshNodeGraphLiveInputDevices();
+      stream = await requestNodeGraphLiveInputStream("");
+    }
+    const source = context.createMediaStreamSource(stream);
+    source.connect(liveNode);
+    nodeGraphMvp.live.inputStream = stream;
+    nodeGraphMvp.live.inputSource = source;
+    nodeGraphMvp.live.inputPermissionStatus = "granted";
+    setNodeGraphLiveInputStatus("connected", "Live INPUT is connected to the browser audio engine.");
+    setNodeGraphLiveMicStatus("connected", "Browser microphone stream is connected.");
+    refreshNodeGraphLiveInputDevices();
+  } catch (error) {
+    const message = nodeGraphLiveInputErrorMessage(error);
+    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+      nodeGraphMvp.live.inputPermissionStatus = "denied";
+    }
+    setNodeGraphLiveInputStatus("blocked", message);
+    setNodeGraphLiveMicStatus("blocked", message);
+    error.nodeGraphInputError = true;
+    throw error;
+  }
+}
+
+async function syncNodeGraphLiveInputSource() {
+  if (nodeGraphMvp.live.inputActive) {
+    await startNodeGraphLiveInputSource();
+  } else {
+    stopNodeGraphLiveInputSource();
+  }
+}
+
+async function startNodeGraphLiveAudio(outputSerial = nodeGraphMvp.live.outputToggleSerial) {
+  if (nodeGraphEarProtectionIsTripped()) {
+    nodeGraphTripEarProtection({ source: "live" });
+    renderNodeGraphLiveControls(false);
+    renderNodeGraphExecutionPlanDebug();
+    return;
+  }
+  if (nodeGraphLiveOutputStartCancelled(outputSerial)) {
+    renderNodeGraphLiveControls(false);
+    renderNodeGraphExecutionPlanDebug();
+    return;
+  }
+  try {
+    if (!nodeGraphScriptReadyForGraphAction("live audio")) {
+      markNodeGraphLiveScriptBlocked();
+      renderNodeGraphLiveControls(false);
+      return;
+    }
+    setNodeGraphLiveStatus("starting", "warn");
+    renderNodeGraphLiveControls(false);
+    stopNodeGraphRenderedPlayback();
+    if (nodeGraphMvp.live.node || nodeGraphMvp.live.context) {
+      await stopNodeGraphLiveAudio();
+      if (nodeGraphLiveOutputStartCancelled(outputSerial)) {
+        renderNodeGraphLiveControls(false);
+        renderNodeGraphExecutionPlanDebug();
+        return;
+      }
+      setNodeGraphLiveStatus("starting", "warn");
+      renderNodeGraphLiveControls(false);
+    }
+
+    const plan = nodeGraphBuildLivePlan();
+    assertNodeGraphLivePlanSupportsClap(plan);
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      throw new Error("Web Audio API unavailable");
+    }
+    const context = new AudioContextConstructor();
+    nodeGraphMvp.live.sessionId += 1;
+    nodeGraphMvp.live.planSerial = 0;
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+    if (nodeGraphLiveOutputStartCancelled(outputSerial)) {
+      await context.close();
+      renderNodeGraphLiveControls(false);
+      renderNodeGraphExecutionPlanDebug();
+      return;
+    }
+    const outputGain = context.createGain();
+    outputGain.gain.value = 1;
+    let liveNode = null;
+    let usesWorklet = false;
+    try {
+      liveNode = await createNodeGraphLiveWorkletNode(context);
+      usesWorklet = true;
+    } catch (error) {
+      liveNode = createNodeGraphLiveScriptProcessorNode(context, plan);
+      setNodeGraphLiveEngineStatus("engine fallback", "warn");
+      setNodeGraphLiveEngineTitle(error.message);
+    }
+    if (nodeGraphLiveOutputStartCancelled(outputSerial)) {
+      try {
+        liveNode?.disconnect();
+      } catch (_error) {
+        // A not-yet-connected live node is already silent.
+      }
+      await context.close();
+      renderNodeGraphLiveControls(false);
+      renderNodeGraphExecutionPlanDebug();
+      return;
+    }
+    nodeGraphMvp.live.context = context;
+    nodeGraphMvp.live.meterGain = null;
+    nodeGraphMvp.live.node = liveNode;
+    nodeGraphMvp.live.outputGain = outputGain;
+    nodeGraphMvp.live.usesWorklet = usesWorklet;
+    liveNode.connect(outputGain);
+    outputGain.connect(context.destination);
+    await syncNodeGraphLiveInputSource();
+    if (nodeGraphLiveOutputStartCancelled(outputSerial)) {
+      await stopNodeGraphLiveAudio();
+      renderNodeGraphExecutionPlanDebug();
+      return;
+    }
+    sendNodeGraphLivePlan();
+    sendNodeGraphLiveMacroControls();
+    sendNodeGraphLivePitchModWheelSignal();
+    if (usesWorklet) {
+      setNodeGraphLiveEngineStatus("engine worklet", "good");
+      setNodeGraphLiveEngineTitle();
+    }
+    await context.resume();
+    clearNodeGraphLiveStatusTitle();
+    renderNodeGraphLiveControls(true);
+  } catch (error) {
+    const inputError = Boolean(error.nodeGraphInputError);
+    const inputErrorMessage = inputError ? nodeGraphLiveInputErrorMessage(error) : "";
+    await stopNodeGraphLiveAudio();
+    if (inputError) {
+      nodeGraphMvp.live.outputEnabled = false;
+      setNodeGraphLiveInputStatus("blocked", inputErrorMessage);
+      setNodeGraphLiveMicStatus("blocked", inputErrorMessage);
+      setNodeGraphLiveBlockedError("input", error, { schedule: false });
+    } else {
+      setNodeGraphLiveBlockedError("plan", error);
+    }
+    renderNodeGraphLiveControls(false);
+  }
+}

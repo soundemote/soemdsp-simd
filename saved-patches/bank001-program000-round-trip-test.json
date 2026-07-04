@@ -1,0 +1,88 @@
+{
+  "grid": {
+    "widthPx": 10000,
+    "heightPx": 10000
+  },
+  "info": {
+    "name": "round-trip-test",
+    "bank": 1,
+    "program": 0
+  },
+  "windows": {
+    "debug": {
+      "y": 100,
+      "height": 300,
+      "width": 400,
+      "open": true,
+      "x": 100
+    }
+  },
+  "graphConnections": [
+    {
+      "destinationNode": "output",
+      "sourcePort": "Out",
+      "destinationGraphInput": "In",
+      "sourceNode": "osc1"
+    }
+  ],
+  "format": {
+    "kind": "soemdsp-sandbox-node-patch",
+    "version": 1
+  },
+  "uiItems": [],
+  "connections": [
+    {
+      "destinationNode": "output",
+      "sourcePort": "Out",
+      "destinationPort": "Left",
+      "sourceNode": "osc1"
+    }
+  ],
+  "codeScreen": [
+    {
+      "source": "console.log('hi')",
+      "language": "javascript",
+      "name": "test-screen",
+      "id": "scr1"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "osc1",
+      "gx": 10,
+      "paramMeta": {
+        "frequency": {
+          "kind": "frequency"
+        },
+        "waveform": {
+          "kind": "waveform"
+        },
+        "amplitude": {
+          "kind": "amplitude"
+        }
+      },
+      "params": {
+        "frequency": 440,
+        "waveform": 0,
+        "amplitude": 0.5
+      },
+      "gy": 10,
+      "type": "osc"
+    },
+    {
+      "id": "output",
+      "gx": 30,
+      "paramMeta": {
+        "amplitude": {
+          "kind": "amplitude"
+        }
+      },
+      "params": {
+        "amplitude": 1
+      },
+      "gy": 10,
+      "type": "output"
+    }
+  ],
+  "monitors": []
+}

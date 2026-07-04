@@ -1,0 +1,574 @@
+# WebUI CLAP Host Plan
+
+Status: Phase 1, initial Phase 3, initial Phase 4, initial Phase 5, and initial Phase 6 prototype started. The localhost health/version host exists and supports browser CORS/preflight access. The host can discover `.clap` paths through scan folders and explicit `--plugin` paths. With `--inspect-metadata`, the host can read native CLAP plugin descriptors in isolated probe subprocesses. With `--test-instantiate`, the host can create, initialize, and destroy plugin instances in isolated probe subprocesses. The browser has a `CLAP Plugin` module shell that can store a selected catalog entry, request/delete a host instance, read host capabilities, read host config, read host audio port metadata, read host parameter metadata, read per-instance `clap.gui` editor capability, open and close supported non-floating Win32 `clap.gui` editors through the local host when the plugin accepts the GUI sequence, read per-instance `clap.latency`, read per-instance `clap.tail`, read/save/restore per-instance `clap.state`, persist host parameter values and saved plugin state in patch data, restore stored parameter values into a host instance, and write host parameter values. Host-discovered CLAP parameters now expose sandbox modulation input ports and slider-output ports. The instance API can keep initialized plugin instances alive, serialize access to the instance table and native instance operations, read CLAP audio ports, read CLAP parameter metadata, report editor capability through `GET /instances/:id/editor`, attempt supported Win32 plugin editors through `POST /instances/:id/editor/open`, close opened plugin editors through `POST /instances/:id/editor/close`, report latency through `GET /instances/:id/latency`, report tail length through `GET /instances/:id/tail`, save state through `GET /instances/:id/state`, load state through `POST /instances/:id/state`, set one parameter plain value through `POST /instances/:id/param`, set multiple parameter plain values through `POST /instances/:id/params`, run bounded offline process calls that can accept and return planar float audio as JSON arrays or base64 float32 channels, keep an offline render session active across multiple process chunks, reject overlapping non-idle render sessions, release abandoned render sessions after an idle timeout, and run a bounded `/process-batch` request for multiple process items. `/health` now reports `hostConfig` with bind host, port, Python executable, script path, working directory, scan dirs, explicit plugins, and probe flags. Host instances now report a safety latch, mute non-finite or excessive raw output, expose `POST /instances/:id/safety/reset`, and publish `maxProcessFrames`, `processBatch`, `offlineRenderSessions`, `renderSessionIdleTimeoutSeconds`, `pluginEditorOpening`, and `pluginStatePersistence` capabilities. Render Sample has an initial bounded bridge that renders reachable CLAP nodes chunk-by-chunk in graph order, requires `audioProcessing: true`, requires `offlineRenderSessions: true`, opens one host render session per reachable CLAP Plugin instance, chunks process calls by the host-reported frame limit, sends effective chunk-start CLAP parameter values inside each process request, sums incoming graph wires into all CLAP input port lanes, calls the host through `planar-f32-base64`, compensates reported CLAP latency when injecting returned output, appends bounded finite CLAP tail frames when reported before the render pass, records reported infinite CLAP tails as metadata, injects all CLAP output port lanes, batches independent CLAP nodes in the same chunk when the host supports it, blocks the render if host safety mutes a CLAP node, closes host render sessions after processing, and rejects feedback edges that touch CLAP Plugin nodes. Live Audio now blocks plans containing CLAP Plugin nodes with a clear status instead of silently routing plugin output. WebSocket transport, packaging, sample-accurate plugin-parameter automation, feedback-safe CLAP scheduling, and Live Audio graph routing are not implemented.
+
+Working name:
+
+```text
+Soundemote WebUI CLAP Host
+```
+
+Cleanup pass (2026-06-28, branch `void/sandbox-bugfixes`):
+
+- CLAP feedback now surfaces at plan time (`compileNodeGraphExecutionPlan`),
+  not only at render time.
+- CLAP latency/tail errors log via `console.warn` instead of silently
+  degrading to zero.
+- CLAP output buffer is padded by one process chunk to absorb latency
+  compensation shift.
+- The `/shutdown` route on the host tool is documented in its README.
+- The disconnect error message mentions the under-construction state and
+  the local `.cmd` launcher path.
+- The connection UI is intentionally disabled via
+  `nodeGraphClapHostUnderConstruction = true`. See Phase 2 for the
+  re-enablement checklist.
+
+## Purpose
+
+Add CLAP plugin support to the browser sandbox through a local native companion app.
+
+The browser remains the modular interface. The local native host owns plugin scanning, plugin loading, plugin processing, filesystem access, and audio safety.
+
+```text
+Browser Sandbox
+    |
+    | WebSocket / localhost HTTP
+    |
+Soundemote WebUI CLAP Host
+    |
+    | Native CLAP API
+    |
+User CLAP Plugins
+```
+
+## Boundary
+
+The browser must not load CLAP plugins directly.
+
+The browser must not own native plugin safety, plugin filesystem access, or plugin audio processing.
+
+The browser sends patch/control/render requests. The native host owns native plugin work.
+
+## User Flow
+
+1. User opens the sandbox.
+2. Sandbox shows `CLAP Host: Not Connected`.
+3. User runs the local companion app.
+4. Sandbox connects to localhost.
+5. Sandbox receives plugin catalog and plugin metadata.
+6. User adds a `CLAP Plugin` module.
+7. Sandbox controls parameters and routing.
+8. Native host processes render requests.
+
+Initial UI copy:
+
+```text
+CLAP Host: Not Connected
+[Download Host] [Connect Local Host]
+```
+
+## Phase 1: Local Host Prototype
+
+Prototype path:
+
+```text
+tools/webui-clap-host/webui_clap_host.py
+```
+
+Build the smallest native executable that can:
+
+- start a localhost server;
+- answer health checks;
+- report host version;
+- expose a small JSON API;
+- shut down cleanly.
+
+Recommended first port:
+
+```text
+47991
+```
+
+Endpoints:
+
+```text
+GET /health
+GET /version
+```
+
+The host sends CORS headers and supports `OPTIONS` preflight so the sandbox page can call localhost from the browser.
+The host also supports `GET /diagnostics` for the running HTTP host and `--doctor` for a JSON preflight report that exits without starting the HTTP server.
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "name": "Soundemote WebUI CLAP Host",
+  "version": "0.1.0"
+}
+```
+
+No plugin loading in Phase 1.
+
+Run the current prototype:
+
+```powershell
+python tools\webui-clap-host\webui_clap_host.py
+tools\webui-clap-host\start_webui_clap_host.cmd
+tools\webui-clap-host\start_webui_clap_host.ps1
+```
+
+The Windows launchers start the same Python prototype with descriptor inspection enabled by default.
+
+## Phase 2: Browser Connection UI
+
+Add sandbox connection state:
+
+```text
+CLAP Host: Disconnected / Connected / Error
+```
+
+Controls:
+
+- `Host` URL field
+- `Connect Local Host`
+- `Copy Host Command`
+- `Download Host` later
+- `Retry`
+
+The first implementation can poll:
+
+```text
+http://127.0.0.1:47991
+```
+
+The browser Host field can override the localhost URL. The native prototype supports `--host` and `--port`.
+
+### Current state (2026-06-28)
+
+The connection UI is intentionally disabled via
+`nodeGraphClapHostUnderConstruction = true` in
+`public/node-graph-clap-host.js`. `bindNodeGraphClapHostControls` early-returns
+so the Connect/Plugins/Diagnostics buttons have no listeners.
+
+The render path (`nodeGraphRenderExternalClapOutputs` in
+`public/node-graph-render-output.js`) still requires a connected host for any
+patch containing a `clapPlugin` node. The disconnect error now mentions the
+under-construction state and points at the local `.cmd` launcher.
+
+To re-enable the UI when ready:
+
+1. Set `nodeGraphClapHostUnderConstruction = false`.
+2. Verify `bindNodeGraphClapHostControls` wires Connect/Plugins/Diagnostics
+   correctly against a running local host.
+3. Surface CLAP feedback at plan time (done —
+   `compileNodeGraphExecutionPlan` now pushes an issue for CLAP-involved
+   feedback).
+4. Surface CLAP latency/tail errors in debug status (done —
+   `nodeGraphClapReportedLatencyFrames`/`nodeGraphClapReportedTailState` now
+   log via `console.warn`).
+5. Audit render-tail/latency compensation (partial — output buffer is padded
+   by one process chunk to absorb latency shift, but trailing `latencyFrames`
+   of output remain zero. Proper fix: pre-query latency from host before
+   render, add to `engineFrames`, trim output).
+
+## Phase 3: Plugin Discovery
+
+The native host scans CLAP plugin folders.
+
+Windows defaults:
+
+```text
+C:\Program Files\Common Files\CLAP
+%LOCALAPPDATA%\Programs\Common\CLAP
+CLAP_PATH entries separated by ;
+```
+
+macOS defaults:
+
+```text
+/Library/Audio/Plug-Ins/CLAP
+~/Library/Audio/Plug-Ins/CLAP
+```
+
+Linux defaults:
+
+```text
+/usr/lib/clap
+/usr/local/lib/clap
+~/.clap
+CLAP_PATH entries separated by :
+```
+
+The first prototype may also accept:
+
+```text
+--plugin "C:\path\to\plugin.clap"
+--scan-dir "C:\path\to\folder"
+--inspect-metadata
+--test-instantiate
+```
+
+Endpoint:
+
+```text
+GET /plugins
+```
+
+Current prototype behavior:
+
+```text
+GET /plugins returns discovered .clap paths.
+Without --inspect-metadata, catalog entries use the file or bundle stem as the provisional name.
+With --inspect-metadata, descriptor probing loads CLAP libraries in isolated subprocesses and reads plugin descriptors.
+Descriptor probing does not instantiate plugins.
+Descriptor probing does not process audio.
+With --test-instantiate, probing creates, initializes, and destroys plugin instances in isolated subprocesses.
+Instantiation probing does not keep instances alive.
+Instantiation probing does not process audio.
+```
+
+Example response shape:
+
+```json
+[
+  {
+    "id": "...",
+    "name": "...",
+    "vendor": "...",
+    "path": "...",
+    "audioInputs": 2,
+    "audioOutputs": 2,
+    "parameters": []
+  }
+]
+```
+
+## Phase 4: Sandbox CLAP Module
+
+Add a sandbox module type:
+
+```text
+CLAP Plugin
+```
+
+Instance data:
+
+```js
+{
+  type: "clapPlugin",
+  clap: {
+    catalogId: "...",
+    clapId: "...",
+    path: "...",
+    name: "...",
+    vendor: "...",
+    instanceId: "..."
+  },
+  params: {}
+}
+```
+
+Current visible behavior:
+
+- title uses the selected plugin name when present;
+- generic stereo `Left` and `Right` input ports are present;
+- generic stereo `Left` and `Right` output ports are present;
+- browser selector uses the localhost plugin catalog;
+- after host connection, the browser reads `GET /instances` to repopulate current host instance summaries;
+- if a patch contains a missing host instance id after reconnect, the module marks it stale and offers `Forget Instance`;
+- `Create Instance` calls `POST /instances`;
+- `Delete Instance` calls `DELETE /instances/:id`;
+- after instance creation, generic stereo ports are replaced with flattened CLAP audio port lanes such as `Input L` and `Input R`;
+- browser lanes expose every CLAP input/output port in host port order, with channels kept inside each port;
+- `Refresh Params` calls `GET /instances/:id/params`;
+- host-owned CLAP parameter sliders call `POST /instances/:id/param`;
+- stored parameter restore calls `POST /instances/:id/params`;
+- host-owned CLAP parameters expose sandbox modulation input ports and slider-output ports after parameter refresh;
+- the module displays host instance safety state and exposes `Reset Safety`;
+- the module routes audio in bounded Render Sample when a host instance exists;
+- Live Audio blocks plans containing CLAP Plugin nodes;
+- supported non-floating Win32 plugin editors can open through a native host window when the plugin accepts the GUI sequence.
+
+Later module behavior:
+
+- audio ports should route real samples through the native host;
+- plugin parameters should become sandbox modulation-capable sliders or a documented bridge equivalent.
+
+## Phase 5: Offline Render First
+
+Do not begin with live plugin hosting.
+
+First useful target:
+
+```text
+Render Sample can process audio through reachable CLAP Plugin nodes in graph order.
+```
+
+Render endpoint:
+
+```text
+POST /render
+```
+
+Example request:
+
+```json
+{
+  "sampleRate": 44100,
+  "frames": 88200,
+  "patch": {},
+  "pluginInstances": []
+}
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "sampleRate": 44100,
+  "channels": 2,
+  "audio": "base64-or-binary-reference"
+}
+```
+
+Later versions may use binary streaming or a temporary WAV file. The current `/process` route can already use `planar-f32-base64` so Render Sample does not send large JSON float arrays for CLAP chunks.
+
+Current prototype behavior:
+
+```text
+POST /instances/:id/process can run as a one-shot probe or as one chunk inside an active host render session.
+As a one-shot probe, it activates one existing instance, processes a bounded generated in-memory buffer, stops processing, deactivates the plugin, clamps metric analysis to finite [-1, 1] samples, and returns process metrics.
+Inside an active render session, it processes the chunk without stopping and restarting the plugin.
+When returnAudio is true, it returns bounded planar float audio as `planar-f32-json` or `planar-f32-base64`.
+When inputAudio is present, it uses caller-supplied planar channel audio as `planar-f32-json` or `planar-f32-base64` instead of the generated impulse.
+Render Sample can use this endpoint for CLAP Plugin nodes with existing host instances.
+Reachable CLAP nodes are processed chunk-by-chunk in graph order. Input buffers are built from incoming graph wires, and already-processed upstream CLAP chunks are available to downstream CLAP nodes in the same offline render pass. Feedback connections or feedback modulations touching CLAP Plugin nodes are rejected before host processing.
+When multiple reachable CLAP nodes have no CLAP dependency between them for the current chunk, the browser may send those process items through `POST /process-batch`.
+The batch endpoint processes items serially and returns one result per item. It reduces localhost request count; it is not a graph scheduler inside the host.
+Before each reachable CLAP node processes, Render Sample sends effective CLAP parameter plain values in the `POST /instances/:id/process` payload.
+When a CLAP parameter has sandbox modulation wires, Render Sample samples the effective value at each CLAP process chunk start.
+This is chunk-start parameter sync. It is not sample-accurate CLAP automation.
+This is a bounded offline bridge, not Live Audio integration.
+```
+
+## Phase 6: Parameter Sync
+
+Sandbox slider changes update local plugin state.
+
+Endpoints:
+
+```text
+POST /instances
+GET /instances
+GET /instances/:id/params
+DELETE /instances/:id
+POST /instances/:id/param
+POST /instances/:id/params
+POST /instances/:id/render/begin
+POST /instances/:id/process
+POST /instances/:id/render/end
+POST /process-batch
+POST /instances/:id/safety/reset
+```
+
+Current prototype behavior:
+
+```text
+POST /instances accepts path and clapId.
+GET /instances returns active initialized instances.
+GET /instances/:id/params reads CLAP parameter metadata and current values.
+POST /instances/:id/param sets a plain parameter value through clap.params.flush().
+POST /instances/:id/params sets multiple plain parameter values through one clap.params.flush() call containing multiple parameter events.
+POST /instances/:id/render/begin activates and starts processing for a bounded offline Render Sample pass.
+POST /instances/:id/process runs a bounded offline process call and returns metrics, with optional planar float JSON or base64 audio. The request may include a `renderSessionId` and a `parameters` array; the host applies those parameter values before processing the chunk and reports the result as `processParameters`.
+If native `plugin.process()` returns `CLAP_PROCESS_ERROR`, the host fails the process call instead of returning audio.
+Direct POST /instances/:id/param and POST /instances/:id/params writes are blocked while a render session is active.
+If a render session is abandoned, the host releases it after the reported idle timeout.
+A second POST /instances/:id/render/begin is rejected while a non-idle render session is active.
+POST /instances/:id/render/end stops processing and deactivates the plugin after the bounded offline Render Sample pass.
+POST /process-batch runs multiple bounded process items in one request and returns one item result for each request item.
+POST /instances/:id/safety/reset clears the instance safety latch after a muted dangerous-output event.
+DELETE /instances/:id destroys the plugin instance.
+Render Sample graph integration exists for bounded CLAP Plugin host calls, including chunk-by-chunk graph-order offline CLAP chains without feedback and bounded finite-tail extension. If a feedback signal or feedback modulation touches a CLAP Plugin node, Render Sample blocks with a clear message.
+Render Sample uses `/process-batch` for independent CLAP nodes in the same chunk when the connected host reports `processBatch: true`.
+
+Render Sample requires the connected host to report `audioProcessing: true` and `offlineRenderSessions: true` in its capabilities.
+
+Render Sample uses the connected host's `maxProcessFrames` capability as the CLAP process chunk size. The current host reports `48000`.
+Render Sample includes effective CLAP parameter values in the process call payload.
+Render Sample can append bounded finite CLAP tail frames after the requested duration. During the appended tail window, source nodes are silenced and infinite tails remain metadata-only.
+Sandbox modulation wires can target CLAP parameters for bounded offline Render Sample processing.
+This modulation bridge is chunk-start control-rate behavior, not CLAP event automation.
+Live Audio blocks plans containing CLAP Plugin nodes with a clear status.
+Live Audio graph integration is not implemented yet.
+```
+
+Parameter rules:
+
+- metadata comes from CLAP;
+- sandbox uses CLAP min, max, default, and unit where possible;
+- stepped parameters use choice-style sliders;
+- continuous parameters use normal sliders;
+- preserve sandbox `maxDigits` formatting policy.
+
+## Phase 7: Safety Boundary
+
+Never trust plugins.
+
+Native host safety layers:
+
+- clamp non-finite values;
+- apply Ear Protection or equivalent guard;
+- hard mute non-finite plugin output or raw output above the host peak limit;
+- latch after a muted dangerous-output event;
+- report protection trips to the browser;
+- require explicit reset or host restart after a safety latch.
+
+Danger path:
+
+```text
+dangerous plugin output -> mute -> latch -> user reset or host restart
+```
+
+## Phase 8: Live Audio Later
+
+Live audio is deferred.
+
+When live hosting is ready, the native host owns:
+
+- audio callback;
+- plugin processing;
+- MIDI queues;
+- audio output device;
+- speaker protection.
+
+The browser sends:
+
+- parameter changes;
+- module graph changes;
+- transport commands;
+- MIDI events.
+
+Avoid real-time audio transport over WebSocket in the first live version.
+
+## Phase 9: Plugin Editor Later
+
+Do not embed plugin GUIs in the first version.
+
+First version exposes sandbox-native controls only.
+
+Later option:
+
+```text
+Browser button: Open Plugin Editor
+Native host opens external plugin editor window.
+```
+
+## Phase 10: Packaging
+
+Eventually ship:
+
+```text
+Soundemote WebUI CLAP Host Installer
+```
+
+User-facing copy:
+
+```text
+Install the local CLAP Host to use plugins from your computer inside the Soundemote sandbox.
+```
+
+The web sandbox must continue working without the local host installed.
+
+## First Proof
+
+Smallest useful proof:
+
+1. Native host starts.
+2. Browser connects and shows `CLAP Host: Connected`.
+3. Native host loads one known plugin by absolute path. Implemented for descriptor reads, instance creation, parameter reads, parameter writes, and bounded offline processing.
+4. Browser shows the plugin in a list. Implemented as catalog status and `CLAP Plugin` selector entries.
+5. User adds `CLAP Plugin` module. Implemented as a browser module shell with generic stereo ports before instance creation.
+6. Browser stores the selected plugin descriptor in patch data. Implemented.
+7. Browser can ask the host to create/delete an instance for the selected module. Implemented.
+8. Browser reads and stores CLAP audio port metadata from the host instance. Implemented.
+9. Browser redraws the module with flattened CLAP audio port lanes. Implemented.
+10. Native host keeps one initialized plugin instance alive and reads its parameters. Implemented through HTTP instance API.
+11. Native host activates and processes one bounded generated buffer through the plugin. Implemented.
+12. Native host can return bounded planar float JSON audio from `/process`. Implemented.
+13. Render Sample sends graph audio through the plugin. Implemented for bounded host-instance CLAP Plugin nodes.
+14. Browser receives playable rendered audio through the graph render path. Implemented for that bounded offline bridge.
+15. Live Audio sends real-time graph audio through the plugin. Not implemented.
+
+## Verification Notes
+
+2026-06-04:
+
+- Browser connected to the local host at `http://127.0.0.1:47991`.
+- Browser catalog scan reported 15 CLAP entries and 12 inspected descriptors.
+- Browser added a `CLAP Plugin` module, selected `Crisp`, and created host instance `clap-2`.
+- The module displayed flattened stereo lanes: `Input L`, `Input R`, `Output L`, `Output R`.
+- The module displayed 11 CLAP parameter sliders.
+- A browser graph connected `gain.Out` to both CLAP inputs and connected both CLAP outputs to `output.Left` and `output.Right`.
+- The execution-plan validator now accepts `clapPlugin` as a supported source node.
+- Browser Render Sample completed with `render ready` and produced a two-second playable audio blob.
+- Follow-up bridge patch: CLAP input buffers are now summed from incoming graph wires, and upstream CLAP outputs are available to downstream CLAP nodes during graph-order offline Render Sample processing.
+- Browser regression proof after the bridge patch: `Crisp` instance `clap-1`, graph valid, Render Sample `render ready`, and a playable two-second blob.
+- CLAP parameter persistence patch: host parameter payloads are translated into patch `params` and `paramMeta`, host slider edits update patch data, and stored patch parameter values are restored to the host instance during parameter refresh.
+- Render Sample parameter sync patch: before host process calls, stored CLAP patch parameter plain values are pushed to the host instance. This does not implement sample-accurate modulation.
+- Browser proof for render parameter sync: `Crisp` Amount was set to `50%` in the browser patch, manually changed to `20%` through the host API, then Render Sample completed with `render ready` and the host reported Amount `50%` again.
+- CLAP parameter port patch: host-discovered CLAP parameters now expose sandbox modulation input ports and slider-output ports. Render Sample applies effective CLAP parameter values at CLAP process chunk starts. This still does not implement sample-accurate CLAP event automation.
+- Browser proof for CLAP parameter modulation: `Gain.Amount` slider output was wired to `Crisp.Amount`, the base `Crisp.Amount` slider was set to `0%`, Render Sample completed with `render ready`, and the host reported `Crisp.Amount` at `33%`, matching Gain's normalized `1 / 3` slider output.
+- Bulk parameter write patch: the host accepts `POST /instances/:id/params` for stored patch restore, applies batches through one `clap.params.flush()` call, and `/process` accepts a `parameters` array so Render Sample can sync chunk-start CLAP values without a separate request.
+- Host API proof for bulk parameter writes: one `POST /instances/clap-1/params` request set `Crisp.Amount` to `25%` and `Crisp.Output` to `0.75`; readback reported both values.
+- Multi-event parameter flush proof: `Crisp` accepted two parameter updates through `POST /instances/clap-1/params`, then accepted two process-time parameter updates through `POST /instances/clap-1/process`; the process response reported `processParameters.count: 2`, `safetyMuted: false`, and `processStatus: 2`.
+- Threaded host safety patch: the instance table is protected by a server lock, and each persistent CLAP instance uses an `RLock` so parameter reads/writes, process calls, safety reset, summary reads, and close operations do not enter the same native instance concurrently.
+- Threaded host proof: with `Crisp`, simultaneous `GET /instances/:id/params`, `POST /instances/:id/process`, and `GET /instances` requests returned three successful responses with zero job errors.
+- Live Audio guard patch: browser live plans containing CLAP Plugin nodes now report `Live Audio does not route CLAP Plugin nodes yet. Use Render Sample for CLAP processing` instead of producing silent plugin output.
+- Base64 audio transport patch: `/process` now accepts `inputAudioFormat: "planar-f32-base64"` and `returnAudioFormat: "planar-f32-base64"`, and browser Render Sample uses that format for CLAP chunks.
+- Host API proof for base64 audio transport: `Crisp` processed 64 frames with base64 stereo input, returned `audioFormat: "planar-f32-base64"`, two output channels, 256 decoded bytes per channel, finite output, and `processStatus: 2`.
+- Host safety latch patch: CLAP instances now expose `safety`, `/process` returns `safetyMuted` and zero audio after a safety trip, `POST /instances/:id/safety/reset` clears the latch, and browser Render Sample blocks with `CLAP safety muted ...` when the host reports a mute.
+- Host API proof for safety state: normal `Crisp` processing returned `safetyMuted: false`, `safety.latched: false`, `rawPeak: 0.1621464192867279`, and `POST /instances/clap-1/safety/reset` returned a clear latch state.
+- Browser safety UI patch: the CLAP Plugin module displays host safety state, updates it from Render Sample `/process` responses, and provides a `Reset Safety` button wired to `POST /instances/:id/safety/reset`.
+- Browser reconnect sync patch: after connecting to the localhost host, the browser reads `GET /instances`, merges host instance summaries into module state, and refreshes displayed safety state for existing instance ids.
+- Host API proof for reconnect sync data: after creating `Crisp` instance `clap-1`, `GET /instances` returned one instance with `safety.latched: false`, empty reason, `rawPeak: 0`, and `peakLimit: 4`.
+- Windows launcher patch: `tools\webui-clap-host\start_webui_clap_host.ps1` starts the prototype host with descriptor inspection enabled by default and accepts port, plugin, scan-dir, and instantiate-probe options.
+- Browser command patch: `Copy Host Command` now copies the Windows `.cmd` launcher command for the selected host and port.
+- Offline render session patch: Render Sample now opens host render sessions before CLAP chunk processing and closes them afterward, so stateful plugins are not restarted for every chunk.
+- Native CLAP process error status fails the process call instead of returning audio.
+- Direct `/param` and `/params` writes are blocked during an active render session. Render-time parameter changes use `/process` payload parameters instead.
+- Abandoned render sessions are released by an idle timeout reported through host capabilities.
+- Overlapping non-idle render sessions are rejected instead of replacing active plugin processing.
+- Browser CLAP audio lane exposure and host processing now use every CLAP input/output port, flattened in host port order.
+- Host all-port buffer proof: `Crisp` processed a render-session chunk through the new buffer builder and returned `processStatus: 2`, `audioFormat: "planar-f32-base64"`, two output channels, one input port, one output port, and `safetyMuted: false`.
+- A plugin with multiple distinct audio ports should be used for a later runtime proof of the multi-port branch.
+- Plugin editor capability patch: instances now report `clap.gui` support through summaries and `GET /instances/:id/editor`; the browser exposes `Open Editor`.
+- Win32 editor opening patch: `POST /instances/:id/editor/open` can create a native parent window and open non-floating Win32 `clap.gui` editors when the plugin reports that API and accepts the GUI sequence. `POST /instances/:id/editor/close` closes opened plugin editors. Editor operations are blocked during active offline render sessions.
+- Plugin latency info patch: instances now report `clap.latency` through summaries, `GET /instances/:id/latency`, and process responses; Render Sample compensates reported latency when injecting returned CLAP output.
+- Plugin tail info patch: instances now report `clap.tail` through summaries, `GET /instances/:id/tail`, and process responses; the browser records reported tail length, including infinite tails, as render metadata.
+- Bounded tail render patch: Render Sample can append finite CLAP tail frames up to the browser tail limit. During the appended tail window, source nodes are silenced while downstream browser processing can continue to pass CLAP output. Infinite tails remain metadata-only.
+- Plugin state persistence patch: instances now report `clap.state` support through summaries, save plugin state through `GET /instances/:id/state`, load saved state through `POST /instances/:id/state`, and the browser can store saved state in patch JSON for later restoration into a recreated host instance.
+- Launcher/config status patch: `/health` now reports `hostConfig`, the browser displays a compact host config summary after connection, and the Windows launcher validates port, Python command, and host script before starting from the sandbox repo root.
+- Host diagnostics patch: `GET /diagnostics` reports host configuration, catalog counts, metadata error counts, instantiation error counts, and missing explicit plugin paths from the running host. The browser host strip has a Diagnostics button for this route.
+- Host doctor patch: `python tools\webui-clap-host\webui_clap_host.py --doctor --inspect-metadata` prints the same class of JSON preflight report without starting the HTTP server.
+- Live Audio, packaging, sample-accurate CLAP automation, feedback-safe CLAP scheduling, and optimized multi-plugin processing remain unimplemented.
+
+## Difficulty
+
+- Local host health connection: easy-medium.
+- Plugin scan and metadata: medium-high.
+- Offline render through one plugin: high.
+- General CLAP module integration: high.
+- Live CLAP hosting: very high.
+- Product-grade host: major product.
+
+## Non-Goals For First Version
+
+- Browser-native CLAP loading.
+- Live plugin audio.
+- Plugin editor embedding.
+- Silent dependency on the local host.
+- Browser responsibility for plugin safety.

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.log
+sandbox-preview.png
+.python-version
+.DS_Store
+*.bak
+public/presets/useruisettings.json
+public/presets/useruisettings.js
+
+# native (Tauri) wrapper artifacts
+src-tauri/target/
+src-tauri/binaries/
+nohup.out
+.claude/

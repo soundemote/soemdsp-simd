@@ -1,0 +1,192 @@
+async function bindNodeGraphUiDevSettingsEvents() {
+  document.getElementById("copyNodeUiDevSettingsButton").addEventListener("click", copyNodeUiDevSettingsToClipboard);
+  document.getElementById("loadNodeUiDevSettingsButton").addEventListener("click", loadNodeUiDevSettingsFile);
+  document.getElementById("saveNodeUiDevSettingsButton").addEventListener("click", saveNodeUiDevSettingsFile);
+  document
+    .getElementById("updateDefaultNodeUiDevSettingsButton")
+    .addEventListener("click", handleUpdateDefaultNodeUiDevSettingsPresetClick);
+  document.getElementById("nodeUiDevButton").addEventListener("click", toggleNodeUiDevHelper);
+  document.getElementById("nodeUiDevHelperClose").addEventListener("click", () => setNodeUiDevHelperVisible(false));
+  document
+    .getElementById("nodeUiDevHelperDragHandle")
+    .addEventListener("pointerdown", beginNodeUiDevHelperDrag);
+  document
+    .getElementById("nodeUiDevHelperHeading")
+    .addEventListener("pointerdown", beginNodeUiDevHelperDrag);
+  document
+    .getElementById("nodeUiDevSettingsHeaderTextSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevButtonTextSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevLiveToggleTextSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModularHeaderButtonBackground")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevTooltipTextSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevMinimumGridBrightness")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevMouseLightEnabled")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevShowOriginMarker")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModularShaderEnabled")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevScopeBloomEnabled")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleLightSpread")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevTextGlowLevel")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleGridInset")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleRoundness")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevGridColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevGridColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevWorkspaceBackgroundColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevWorkspaceBackgroundColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSettingsHeaderTopRatio")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSettingsHeaderPadding")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderDotSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleTitleFont")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleTitleFont")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleTitleHeight")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleTitleTextFill")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleIoSectionHeight")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevModuleNodeSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderWidth")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderHeight")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderLabelColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderLabelColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderValueColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderValueColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderUnitColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderUnitColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderFillHoverColor")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderFillHoverColor")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSliderFillHoverAlpha")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevNodeGlowSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevWirePatchPointSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevWireThickness")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevTraceWireThickness")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevChoiceSlideEmptyBorder")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevChoiceDividerHeight")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevChoiceSlideDebugBoxes")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevBypassIconSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevBypassIconGlowSpread")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  for (const colorInputId of [
+    "nodeUiDevBypassIconGlowColor",
+    "nodeUiDevBypassIconOnColor",
+    "nodeUiDevBypassOnBackgroundColor",
+    "nodeUiDevBypassOffBackgroundColor",
+  ]) {
+    const colorInput = document.getElementById(colorInputId);
+    colorInput.addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+    colorInput.addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  }
+  document
+    .getElementById("nodeUiDevMoveSymbolSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevCloseIconSize")
+    .addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+  document
+    .getElementById("nodeUiDevSettingsHeaderHighlights")
+    .addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  for (const colorInput of document.querySelectorAll("[data-node-color-var]")) {
+    colorInput.addEventListener("input", syncNodeUiDevSettingsHeaderControls);
+    colorInput.addEventListener("change", syncNodeUiDevSettingsHeaderControls);
+  }
+  installNodeUiDevExposeControls();
+  organizeNodeUiDevSections();
+  installNodeSettingsHeaderTextFitObserver();
+  installNodeLiveToggleTextFitObserver();
+  await loadNodeUiDevDefaultSettings();
+  syncNodeUiDevSettingsHeaderControls();
+  document.addEventListener("pointermove", dragNodeUiDevHelper);
+  document.addEventListener("pointerup", endNodeUiDevHelperDrag);
+  document.addEventListener("pointercancel", endNodeUiDevHelperDrag);
+  document.addEventListener("pointermove", dragNodeUserUiSettings);
+  document.addEventListener("pointerup", endNodeUserUiSettingsDrag);
+  document.addEventListener("pointercancel", endNodeUserUiSettingsDrag);
+}

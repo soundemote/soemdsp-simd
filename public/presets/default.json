@@ -1,0 +1,323 @@
+{
+  "activeCameraId": "camera-1",
+  "audio": {
+    "targetSampleRate": 44100
+  },
+  "bypassedNodes": [],
+  "cameras": [
+    {
+      "color": "#ff3333",
+      "enabled": true,
+      "height": 488,
+      "id": "camera-1",
+      "midiTrigger": null,
+      "name": "Camera 1",
+      "resolutionHeight": 1080,
+      "resolutionWidth": 1920,
+      "width": 868,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "connections": [
+    {
+      "destinationNode": "output",
+      "destinationPort": "Left",
+      "sourceNode": "audioPlayer-1",
+      "sourcePort": "Left",
+      "tracePoints": []
+    },
+    {
+      "destinationNode": "output",
+      "destinationPort": "Right",
+      "sourceNode": "audioPlayer-1",
+      "sourcePort": "Right",
+      "tracePoints": []
+    }
+  ],
+  "format": {
+    "kind": "soemdsp-sandbox-node-patch",
+    "version": 1
+  },
+  "grid": {
+    "heightPx": 28,
+    "sizePx": 28,
+    "widthPx": 28
+  },
+  "info": {
+    "author": "",
+    "bank": 0,
+    "bankName": "basic",
+    "description": "",
+    "name": "ellipsoid",
+    "program": 0,
+    "tags": "circle"
+  },
+  "modulations": [],
+  "monitors": [],
+  "nodes": [
+    {
+      "gx": 1,
+      "gy": -3,
+      "id": "output",
+      "paramMeta": {
+        "volume": {
+          "alias": "",
+          "choices": [],
+          "curveAmount": 0.5,
+          "def": 0.1,
+          "displayChoices": false,
+          "divideChoicesVisibly": false,
+          "kind": "decimal",
+          "linearSmoothing": true,
+          "max": 1,
+          "maxDigits": 3,
+          "mid": 0.1,
+          "min": 0,
+          "nonlinearSlider": false,
+          "sliderCurve": "linear",
+          "showSign": false,
+          "step": 0,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "",
+          "wraparound": false
+        }
+      },
+      "params": {
+        "volume": 0.640154150863261
+      },
+      "type": "output",
+      "traceDisplaySettings": {
+        "brightness": 0.92,
+        "color": "#75ebff",
+        "dot1Enabled": true,
+        "dot1Size": 0.08,
+        "dot2Brightness": 0.18,
+        "dot2Color": "#184fff",
+        "dot2Enabled": true,
+        "dot2Size": 0.24,
+        "dot2LineThickness": 0.48,
+        "cycles": 2,
+        "lineThickness": 0.2,
+        "padding": 0,
+        "skipSamples": 1,
+        "sourceSync": true,
+        "zoomSeconds": 0.05
+      }
+    },
+    {
+      "gx": -8,
+      "gy": -9,
+      "id": "audioPlayer-1",
+      "paramMeta": {
+        "level": {
+          "alias": "",
+          "choices": [],
+          "curveAmount": 0,
+          "def": 1,
+          "displayChoices": false,
+          "divideChoicesVisibly": false,
+          "kind": "decimal",
+          "linearSmoothing": true,
+          "max": 1,
+          "maxDigits": 3,
+          "mid": 0.5,
+          "min": 0,
+          "nonlinearSlider": false,
+          "sliderCurve": "linear",
+          "showSign": false,
+          "step": 0,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "",
+          "wraparound": false
+        },
+        "speed": {
+          "alias": "",
+          "choices": [],
+          "curveAmount": 0,
+          "def": 1,
+          "displayChoices": false,
+          "divideChoicesVisibly": false,
+          "kind": "decimal",
+          "linearSmoothing": false,
+          "max": 8,
+          "maxDigits": 4,
+          "mid": 1,
+          "min": 0,
+          "nonlinearSlider": true,
+          "sliderCurve": "skew",
+          "showSign": false,
+          "step": 0,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "x",
+          "wraparound": false
+        },
+        "start": {
+          "alias": "",
+          "choices": [],
+          "curveAmount": 0,
+          "def": 0,
+          "displayChoices": false,
+          "divideChoicesVisibly": false,
+          "kind": "decimal",
+          "linearSmoothing": false,
+          "max": 1,
+          "maxDigits": 3,
+          "mid": 0.5,
+          "min": 0,
+          "nonlinearSlider": false,
+          "sliderCurve": "linear",
+          "showSign": false,
+          "step": 0,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "",
+          "wraparound": false
+        },
+        "end": {
+          "alias": "",
+          "choices": [],
+          "curveAmount": 0,
+          "def": 1,
+          "displayChoices": false,
+          "divideChoicesVisibly": false,
+          "kind": "decimal",
+          "linearSmoothing": false,
+          "max": 1,
+          "maxDigits": 3,
+          "mid": 0.5,
+          "min": 0,
+          "nonlinearSlider": false,
+          "sliderCurve": "linear",
+          "showSign": false,
+          "step": 0,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "",
+          "wraparound": false
+        },
+        "transport": {
+          "alias": "",
+          "choices": [
+            "Off (reset)",
+            "Stop",
+            "Pause",
+            "Play",
+            "Loop"
+          ],
+          "curveAmount": 0,
+          "def": 3,
+          "displayChoices": true,
+          "divideChoicesVisibly": true,
+          "kind": "decimal",
+          "linearSmoothing": false,
+          "max": 4,
+          "maxDigits": 3,
+          "mid": 2,
+          "min": 0,
+          "nonlinearSlider": false,
+          "sliderCurve": "linear",
+          "showSign": false,
+          "step": 1,
+          "unboundedMax": false,
+          "unboundedMin": false,
+          "unit": "",
+          "wraparound": false
+        }
+      },
+      "params": {
+        "level": 1,
+        "speed": 1,
+        "start": 0,
+        "end": 1,
+        "transport": 3
+      },
+      "type": "audioPlayer",
+      "sample": {
+        "id": "chaosarp-lorenz-startup"
+      }
+    }
+  ],
+  "requiredAssets": [
+    {
+      "acceptedTypes": [
+        "audio/*"
+      ],
+      "file": {
+        "extension": "mp3",
+        "mime": "audio/mpeg",
+        "name": "Elan Hickler - ChaosArp Lorenz.mp3",
+        "size": 10447933,
+        "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3"
+      },
+      "id": "chaosarp-lorenz-startup",
+      "kind": "audio",
+      "metadata": {
+        "artist": "Elan Hickler",
+        "title": "ChaosArp Lorenz",
+        "startupMusic": true
+      },
+      "name": "Elan Hickler - ChaosArp Lorenz",
+      "nodeIds": [
+        "audioPlayer-1"
+      ],
+      "requiredBy": [
+        "Music Player 1"
+      ],
+      "resourceId": "chaosarp-lorenz-startup",
+      "sourceName": "Elan Hickler - ChaosArp Lorenz.mp3",
+      "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3"
+    }
+  ],
+  "samples": [
+    {
+      "acceptedTypes": [
+        "audio/*"
+      ],
+      "file": {
+        "extension": "mp3",
+        "mime": "audio/mpeg",
+        "name": "Elan Hickler - ChaosArp Lorenz.mp3",
+        "size": 10447933,
+        "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3"
+      },
+      "id": "chaosarp-lorenz-startup",
+      "kind": "audio",
+      "metadata": {
+        "artist": "Elan Hickler",
+        "title": "ChaosArp Lorenz",
+        "startupMusic": true
+      },
+      "name": "Elan Hickler - ChaosArp Lorenz",
+      "resourceId": "chaosarp-lorenz-startup",
+      "sourceName": "Elan Hickler - ChaosArp Lorenz.mp3",
+      "sourcePath": "./public/resources/audio/Elan Hickler - ChaosArp Lorenz.mp3"
+    }
+  ],
+  "timing": {
+    "tempoBpm": 120,
+    "timeSignatureDenominator": 4,
+    "timeSignatureNumerator": 4
+  },
+  "uiItems": [],
+  "view": {
+    "heightGu": 13,
+    "widthGu": 16,
+    "zoom": 0.5956522631507978
+  },
+  "visual": {
+    "background": {
+      "h": 210,
+      "l": 5,
+      "s": 0
+    },
+    "mode": "auto",
+    "scale": 1,
+    "style": "glow",
+    "theme": "cyan-violet",
+    "trail": 0.35
+  }
+}

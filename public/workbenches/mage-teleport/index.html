@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mage Teleport Workbench</title>
+  <link rel="stylesheet" href="./styles.css?v=mage-teleport-workbench-1">
+</head>
+<body>
+  <main class="teleport-workbench">
+    <section class="stage" aria-label="Mage teleport sign preview">
+      <canvas id="teleportCanvas" width="1280" height="720" aria-label="Teleport visualizer"></canvas>
+      <div class="stage-overlay" aria-hidden="true">
+        <div class="mage">
+          <div class="hood"></div>
+          <div class="body"></div>
+          <div class="staff"></div>
+        </div>
+        <div class="sigil">
+          <i></i>
+          <i></i>
+          <i></i>
+        </div>
+      </div>
+      <button id="castTeleportButton" class="cast-button" type="button">
+        <span>Press</span>
+        <strong>Mage Teleport</strong>
+      </button>
+    </section>
+
+    <aside class="controls" aria-label="Teleport controls">
+      <header>
+        <span>Workbench</span>
+        <h1>Mage Teleport</h1>
+      </header>
+
+      <div class="control-row">
+        <label for="teleportHue">Arcane Hue</label>
+        <input id="teleportHue" type="range" min="0" max="360" value="202">
+        <output id="teleportHueValue" for="teleportHue">202</output>
+      </div>
+
+      <div class="control-row">
+        <label for="teleportCharge">Charge</label>
+        <input id="teleportCharge" type="range" min="0" max="1" step="0.01" value="0.72">
+        <output id="teleportChargeValue" for="teleportCharge">0.72</output>
+      </div>
+
+      <div class="control-row">
+        <label for="teleportPitch">Pitch Bend</label>
+        <input id="teleportPitch" type="range" min="-12" max="12" step="0.1" value="7">
+        <output id="teleportPitchValue" for="teleportPitch">+7.0</output>
+      </div>
+
+      <div class="control-row">
+        <label for="teleportSparkle">Sparkle</label>
+        <input id="teleportSparkle" type="range" min="0" max="1" step="0.01" value="0.66">
+        <output id="teleportSparkleValue" for="teleportSparkle">0.66</output>
+      </div>
+
+      <div class="control-row">
+        <label for="teleportDuration">Duration</label>
+        <input id="teleportDuration" type="range" min="0.35" max="2.4" step="0.01" value="1.1">
+        <output id="teleportDurationValue" for="teleportDuration">1.10s</output>
+      </div>
+
+      <label class="select-row" for="teleportShape">
+        <span>Shape</span>
+        <select id="teleportShape">
+          <option value="ring">Ring Collapse</option>
+          <option value="column">Column Tear</option>
+          <option value="scatter">Scatter Blink</option>
+        </select>
+      </label>
+
+      <pre id="teleportPacket" class="packet" aria-label="Teleport packet preview"></pre>
+    </aside>
+  </main>
+  <script src="./mage-teleport-workbench.js?v=mage-teleport-workbench-1"></script>
+</body>
+</html>

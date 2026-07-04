@@ -1,0 +1,434 @@
+function nodeGraphPatchTimingValue(key) {
+  return normalizeNodeGraphPatchTiming(nodeGraphMvp?.patch?.timing)[key];
+}
+
+const nodeGraphTapTempoState = {
+  lastTapMs: 0,
+  intervals: [],
+};
+
+function syncNodeGraphHeaderTimingWidgets() {
+  const timing = normalizeNodeGraphPatchTiming(nodeGraphMvp?.patch?.timing);
+  for (const input of document.querySelectorAll(".node-header-timing-input")) {
+    const key = input.dataset.timingField;
+    if (Object.hasOwn(timing, key)) {
+      input.value = String(timing[key]);
+    }
+  }
+}
+
+function updateNodeGraphPatchTimingFromHeader(input) {
+  const key = input?.dataset?.timingField;
+  if (!key) {
+    return;
+  }
+  const current = normalizeNodeGraphPatchTiming(nodeGraphMvp.patch.timing);
+  const next = normalizeNodeGraphPatchTiming({
+    ...current,
+    [key]: input.value,
+  });
+  if (
+    current.tempoBpm === next.tempoBpm &&
+    current.timeSignatureNumerator === next.timeSignatureNumerator &&
+    current.timeSignatureDenominator === next.timeSignatureDenominator
+  ) {
+    input.value = String(next[key]);
+    return;
+  }
+  const patch = cloneNodeGraphPatch(nodeGraphMvp.patch);
+  patch.timing = next;
+  commitNodeGraphPatch(patch, {
+    markPending: false,
+    status: "timing synced",
+  });
+}
+
+function commitNodeGraphHeaderNumberInput(input) {
+  if (!input) {
+    return;
+  }
+  if (input.dataset.timingField) {
+    updateNodeGraphPatchTimingFromHeader(input);
+  } else if (input.dataset.globalScopeInput) {
+    setNodeGraphScopeNumberInputValue(input, input.value);
+  }
+  input.readOnly = true;
+}
+
+function bindNodeGraphHeaderTimingWidgets(root = document) {
+  for (const input of root.querySelectorAll(".node-header-timing-input")) {
+    if (input.dataset.timingBound === "true") {
+      continue;
+    }
+    input.dataset.timingBound = "true";
+    if (input.dataset.globalScopeNumberDrag === "true") {
+      input.readOnly = true;
+    }
+    input.addEventListener("change", () => commitNodeGraphHeaderNumberInput(input));
+    input.addEventListener("blur", () => commitNodeGraphHeaderNumberInput(input));
+    if (input.dataset.timingField) {
+      input.addEventListener("dblclick", beginNodeGraphScopeNumberEdit);
+    }
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        commitNodeGraphHeaderNumberInput(input);
+        input.blur();
+      }
+      event.stopPropagation();
+    });
+    input.addEventListener("pointerdown", (event) => {
+      if (input.dataset.timingField && input.readOnly) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+    });
+  }
+  for (const field of root.querySelectorAll(".node-header-timing-field[data-header-number-drag='true']")) {
+    if (field.dataset.headerNumberDragBound === "true") {
+      continue;
+    }
+    field.dataset.headerNumberDragBound = "true";
+    field.addEventListener("dblclick", beginNodeGraphScopeNumberEdit, true);
+    field.addEventListener("pointerdown", beginNodeGraphScopeNumberDrag, true);
+  }
+}
+
+function createNodeGraphHeaderTimingInput(key, label, options = {}) {
+  const field = document.createElement("label");
+  field.className = "node-header-timing-field";
+  field.dataset.headerNumberDrag = "true";
+  if (options.row) {
+    field.dataset.timingRow = options.row;
+  }
+  field.setAttribute("aria-label", label);
+
+  const caption = document.createElement("span");
+  caption.className = "node-header-timing-caption";
+  caption.textContent = label;
+  field.append(caption);
+
+  const input = document.createElement("input");
+  input.className = "node-header-timing-input";
+  input.dataset.timingField = key;
+  input.dataset.globalScopeNumberDrag = "true";
+  input.inputMode = "numeric";
+  input.min = String(options.min ?? 1);
+  input.max = String(options.max ?? 32);
+  input.step = String(options.step ?? 1);
+  input.type = "number";
+  input.readOnly = true;
+  input.value = String(nodeGraphPatchTimingValue(key));
+  field.append(input);
+
+  return field;
+}
+
+function createNodeGraphTapTempoButton() {
+  const button = document.createElement("button");
+  button.className = "node-header-tap-tempo-button";
+  button.type = "button";
+  button.textContent = "Tap";
+  button.title = "Tap tempo";
+  button.setAttribute("aria-label", "Tap tempo for patch BPM");
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handleNodeGraphTapTempo();
+  });
+  button.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  button.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+  });
+  return button;
+}
+
+function createNodeGraphHeaderSpeedPlaceholder() {
+  const field = document.createElement("label");
+  field.className = "node-header-timing-field node-header-scope-field node-header-speed-placeholder node-under-construction-control";
+  field.setAttribute("aria-label", "Speed control under construction");
+  field.dataset.tooltipKey = "timing.speedUnderConstruction";
+
+  const caption = document.createElement("span");
+  caption.className = "node-header-timing-caption";
+  caption.textContent = "Speed";
+  field.append(caption);
+
+  const input = document.createElement("input");
+  input.className = "node-header-timing-input";
+  input.inputMode = "decimal";
+  input.max = "16";
+  input.min = "0";
+  input.readOnly = true;
+  input.step = "0.1";
+  input.type = "number";
+  input.value = "1.0";
+  input.setAttribute("aria-label", "Speed placeholder, under construction");
+  input.dataset.tooltipKey = "timing.speedUnderConstruction";
+  input.addEventListener("keydown", (event) => event.stopPropagation());
+  input.addEventListener("pointerdown", (event) => event.stopPropagation());
+
+  field.append(input);
+  return field;
+}
+
+function createNodeGraphHeaderScopeInput(id, label, value, options = {}) {
+  const field = document.createElement("label");
+  field.className = "node-header-timing-field node-header-scope-field";
+  if (options.underConstruction) {
+    field.classList.add("node-under-construction-control");
+    field.dataset.tooltipKey = options.tooltipKey || "timing.underConstruction";
+    field.title = options.title || `${label} is under construction.`;
+  }
+  if (options.row) {
+    field.dataset.timingRow = options.row;
+  }
+  if (!options.underConstruction) {
+    field.dataset.headerNumberDrag = "true";
+  }
+  field.setAttribute("aria-label", options.ariaLabel || label);
+
+  const caption = document.createElement("span");
+  caption.className = "node-header-timing-caption";
+  caption.textContent = label;
+  field.append(caption);
+
+  const input = document.createElement("input");
+  input.id = id;
+  input.className = "node-header-timing-input";
+  if (!options.underConstruction) {
+    input.dataset.globalScopeInput = options.scopeInput || "";
+    input.dataset.globalScopeNumberDrag = "true";
+  }
+  input.inputMode = options.inputMode || "decimal";
+  input.min = String(options.min ?? 0);
+  input.max = String(options.max ?? 1);
+  input.step = String(options.step ?? 0.01);
+  input.readOnly = true;
+  input.type = "number";
+  input.value = String(value);
+  if (options.underConstruction) {
+    input.tabIndex = -1;
+    input.setAttribute("aria-label", `${label} placeholder, under construction`);
+    input.dataset.tooltipKey = options.tooltipKey || "timing.underConstruction";
+  }
+  input.addEventListener("keydown", (event) => event.stopPropagation());
+  input.addEventListener("pointerdown", (event) => event.stopPropagation());
+  field.append(input);
+
+  return field;
+}
+
+function resetNodeGraphTapTempo(nowMs = 0) {
+  nodeGraphTapTempoState.lastTapMs = nowMs;
+  nodeGraphTapTempoState.intervals = [];
+}
+
+function handleNodeGraphTapTempo() {
+  const nowMs = performance.now();
+  if (!nodeGraphTapTempoState.lastTapMs || nowMs - nodeGraphTapTempoState.lastTapMs > 2500) {
+    resetNodeGraphTapTempo(nowMs);
+    return;
+  }
+
+  const intervalMs = nowMs - nodeGraphTapTempoState.lastTapMs;
+  nodeGraphTapTempoState.lastTapMs = nowMs;
+  nodeGraphTapTempoState.intervals.push(intervalMs);
+  if (nodeGraphTapTempoState.intervals.length > 4) {
+    nodeGraphTapTempoState.intervals.shift();
+  }
+  const averageIntervalMs = nodeGraphTapTempoState.intervals.reduce((total, value) => total + value, 0)
+    / nodeGraphTapTempoState.intervals.length;
+  const tempoBpm = Math.max(1, Math.min(320, Math.round(60000 / averageIntervalMs)));
+  const patch = cloneNodeGraphPatch(nodeGraphMvp.patch);
+  patch.timing = normalizeNodeGraphPatchTiming({
+    ...patch.timing,
+    tempoBpm,
+  });
+  commitNodeGraphPatch(patch, {
+    markPending: false,
+    status: "tap tempo synced",
+  });
+}
+
+function createNodeGraphHeaderRenderRangeInput(className, label, defaultValue, options = {}) {
+  const field = document.createElement("label");
+  field.className = "node-header-timing-field node-header-render-range-field";
+  field.setAttribute("aria-label", options.ariaLabel || label);
+  if (options.tooltip) field.title = options.tooltip;
+
+  const caption = document.createElement("span");
+  caption.className = "node-header-timing-caption";
+  caption.textContent = label;
+  field.append(caption);
+
+  const input = document.createElement("input");
+  input.className = `node-header-timing-input ${className}`;
+  input.inputMode = "decimal";
+  input.min = String(options.min ?? 0);
+  input.max = String(options.max ?? 3600);
+  input.step = "0.05";
+  input.type = "number";
+  input.value = formatNodeSliderCompactNumber(defaultValue);
+  input.setAttribute("aria-label", options.ariaLabel || label);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { input.blur(); }
+    event.stopPropagation();
+  });
+  input.addEventListener("change", handleNodeGraphRenderRangeInput);
+  input.addEventListener("blur", handleNodeGraphRenderRangeInput);
+  input.addEventListener("pointerdown", (event) => event.stopPropagation());
+  field.append(input);
+
+  return field;
+}
+
+function createNodeGraphHeaderTimingWidgets() {
+  const group = document.createElement("div");
+  group.className = "node-header-timing-widgets";
+  group.setAttribute("aria-label", "Patch timing");
+
+  group.append(
+    createNodeGraphTapTempoButton(),
+    createNodeGraphHeaderTimingInput("tempoBpm", "BPM", { max: 320 }),
+    createNodeGraphHeaderTimingInput("timeSignatureNumerator", "Beats"),
+    createNodeGraphHeaderTimingInput("timeSignatureDenominator", "Unit"),
+    createNodeGraphHeaderScopeInput(
+      "nodeMasterScopeFps",
+      "FPS",
+      normalizeNodeGraphModuleScopeFramesPerSecond(nodeGraphMvp.moduleScopeFramesPerSecond ?? 60),
+      {
+        ariaLabel: "Display frames per second",
+        inputMode: "numeric",
+        max: 240,
+        min: 0,
+        scopeInput: "framesPerSecond",
+        step: 1,
+      },
+    ),
+    createNodeGraphHeaderSpeedPlaceholder(),
+    createNodeGraphHeaderRenderRangeInput("node-header-render-start-input", "Start", nodeGraphMvp.renderStartSeconds ?? 0, { ariaLabel: "Render start time in seconds", min: 0, max: 3599, tooltip: "Sets the Render Sample start point (seconds)" }),
+    createNodeGraphHeaderRenderRangeInput("node-header-render-end-input", "End", nodeGraphMvp.renderEndSeconds ?? (nodeGraphMvp.seconds ?? 2), { ariaLabel: "Render end time in seconds", min: 0.05, max: 3600, tooltip: "Sets the Render Sample end point (seconds)" }),
+  );
+  return group;
+}
+
+function createNodeGraphCommandCenterTimingWidgets() {
+  const group = document.createElement("div");
+  group.className = "node-header-timing-widgets node-command-center-timing-widgets";
+  group.setAttribute("aria-label", "Command Center patch timing");
+  group.append(
+    createNodeGraphHeaderTimingInput("tempoBpm", "BPM", { max: 320 }),
+    createNodeGraphHeaderTimingInput("timeSignatureNumerator", "Beats"),
+    createNodeGraphHeaderTimingInput("timeSignatureDenominator", "Unit"),
+  );
+  return group;
+}
+
+function renderNodeGraphCommandCenterTimingControls() {
+  const host = document.getElementById("nodeSceneTimingControls");
+  if (!host) {
+    return;
+  }
+  if (!host.querySelector(".node-command-center-timing-widgets")) {
+    host.replaceChildren(createNodeGraphCommandCenterTimingWidgets());
+  }
+  bindNodeGraphHeaderTimingWidgets(host);
+}
+
+function renderNodeGraphPatchTimingControls() {
+  renderNodeGraphCommandCenterTimingControls();
+  const host = document.getElementById("nodePatchTimingControls");
+  if (!host) {
+    syncNodeGraphHeaderTimingWidgets();
+    return;
+  }
+  if (!host.querySelector(".node-header-timing-widgets")) {
+    host.replaceChildren(createNodeGraphHeaderTimingWidgets());
+  }
+  bindNodeGraphHeaderTimingWidgets(host);
+  syncNodeGraphHeaderTimingWidgets();
+  syncNodeGraphRenderRangeToUI();
+}
+
+function createNodeGraphModuleHeader(type, node, definition) {
+  const header = document.createElement("div");
+  header.className = "dsp-node-header";
+  const titleRow = document.createElement("div");
+  titleRow.className = "node-header-title-row";
+  nodeGraphApplyTooltip(titleRow, "module.titleMove", {}, { title: false });
+  const titleText = document.createElement("span");
+  titleText.className = "node-header-title";
+  titleText.textContent = nodeGraphPatchNodeTitle({ id: node, type });
+  titleRow.append(titleText);
+  header.append(titleRow);
+
+  const actionRow = document.createElement("div");
+  actionRow.className = "node-header-actions";
+  const handle = document.createElement("button");
+  handle.className = "node-drag-handle";
+  handle.type = "button";
+  handle.setAttribute("aria-label", `Move ${nodeGraphNodeLabels[type]} module`);
+  nodeGraphApplyTooltip(handle, "module.move", {}, { title: false });
+  handle.innerHTML = "&#x2725;";
+  actionRow.append(handle);
+  const displayButton = document.createElement("button");
+  displayButton.className = "node-display-settings-button";
+  displayButton.type = "button";
+  displayButton.dataset.node = node;
+  displayButton.setAttribute("aria-label", `${nodeGraphNodeLabels[type]} display settings`);
+  displayButton.setAttribute("aria-pressed", "true");
+  nodeGraphApplyTooltip(displayButton, "module.displaySettings", {}, { title: false });
+  displayButton.textContent = "\u{1F4FA}";
+  actionRow.append(displayButton);
+  const metaparameterButton = document.createElement("button");
+  metaparameterButton.className = "node-metaparameter-button";
+  metaparameterButton.type = "button";
+  metaparameterButton.dataset.node = node;
+  metaparameterButton.setAttribute("aria-label", `${nodeGraphNodeLabels[type]} metaparameters`);
+  metaparameterButton.setAttribute("aria-pressed", "true");
+  nodeGraphApplyTooltip(metaparameterButton, "module.metaparameters", {}, { title: false });
+  metaparameterButton.textContent = "\u{1F39B}\uFE0F";
+  actionRow.append(metaparameterButton);
+  const actionButton = document.createElement("button");
+  actionButton.className = "node-action-button";
+  actionButton.type = "button";
+  actionButton.dataset.node = node;
+  actionButton.setAttribute("aria-label", `${nodeGraphNodeLabels[type]} module settings`);
+  nodeGraphApplyTooltip(actionButton, "module.actionsTitle", {}, { title: false });
+  actionButton.textContent = "\u2699\uFE0F";
+  actionRow.append(actionButton);
+  const orderBadge = document.createElement("span");
+  orderBadge.className = "node-execution-order-badge";
+  orderBadge.dataset.executionState = "inactive";
+  orderBadge.textContent = "--";
+  orderBadge.setAttribute("aria-label", `${nodeGraphNodeLabels[type]} execution order inactive`);
+  nodeGraphApplyTooltip(orderBadge, "module.executionTitleInactive", {}, { title: false });
+  actionRow.append(orderBadge);
+  if (definition.output) {
+    const bypassButton = document.createElement("button");
+    bypassButton.className = "node-bypass-button";
+    bypassButton.type = "button";
+    bypassButton.dataset.node = node;
+    bypassButton.textContent = nodeGraphBypassGlyph(false);
+    bypassButton.setAttribute("aria-label", "Toggle live OUTPUT from Output module");
+    bypassButton.setAttribute("aria-pressed", "true");
+    nodeGraphApplyTooltip(bypassButton, "module.outputToggle", {}, { title: false });
+    actionRow.append(bypassButton);
+  }
+  if (!definition.output && !definition.layoutOnly) {
+    const bypassButton = document.createElement("button");
+    bypassButton.className = "node-bypass-button";
+    bypassButton.type = "button";
+    bypassButton.dataset.node = node;
+    bypassButton.textContent = nodeGraphBypassGlyph(false);
+    bypassButton.setAttribute("aria-label", `Bypass ${nodeGraphNodeLabels[type]} module`);
+    bypassButton.setAttribute("aria-pressed", "false");
+    nodeGraphApplyTooltip(bypassButton, "module.bypass", {}, { title: false });
+    actionRow.append(bypassButton);
+  }
+  header.append(actionRow);
+
+  return header;
+}
