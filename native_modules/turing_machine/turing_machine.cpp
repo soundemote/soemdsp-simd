@@ -2,6 +2,8 @@
 // soemdsp-native-label: Turing Machine
 // soemdsp-native-target: turingMachine
 // soemdsp-native-kind: sequencer
+// soemdsp-native-path: Sequencer/Generative/Turing Machine
+// soemdsp-native-construction: false
 
 // Ported from turingMachineSample in public/node-live-audio-worklet.js. The
 // original used Math.random() for the bit-flip decision -- WASM has no

@@ -2,6 +2,8 @@
 // soemdsp-native-label: DSF Oscillator
 // soemdsp-native-target: dsfOscillator
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Discrete Summation Formula/DSF Oscillator
+// soemdsp-native-construction: false
 
 // The "DSF starter kit" -- a Discrete Summation Formula oscillator, the
 // other alias-free technique studied for the aliasing-wars mission (see

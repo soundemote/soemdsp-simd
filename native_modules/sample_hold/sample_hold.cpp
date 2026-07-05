@@ -2,6 +2,8 @@
 // soemdsp-native-label: Sample & Hold
 // soemdsp-native-target: sampleHold
 // soemdsp-native-kind: utility
+// soemdsp-native-path: Utility/Sample and Hold/Sample & Hold
+// soemdsp-native-construction: false
 
 // The noise-source substitution used when "In" is disconnected is a shared,
 // nodeId-seeded PRNG that lives on the JS side (resetSeededState /

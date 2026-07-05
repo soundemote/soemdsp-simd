@@ -2,6 +2,8 @@
 // soemdsp-native-label: Pluck Envelope
 // soemdsp-native-target: pluckEnvelope
 // soemdsp-native-kind: envelope
+// soemdsp-native-path: Envelope/Percussive/Pluck Envelope
+// soemdsp-native-construction: false
 
 namespace {
 

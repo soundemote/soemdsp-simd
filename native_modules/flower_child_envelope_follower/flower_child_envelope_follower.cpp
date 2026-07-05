@@ -2,6 +2,8 @@
 // soemdsp-native-label: Flower Child Envelope Follower
 // soemdsp-native-target: flowerChildEnvelopeFollower
 // soemdsp-native-kind: envelope
+// soemdsp-native-path: Envelope/Follower/Flower Child Envelope Follower
+// soemdsp-native-construction: false
 
 namespace {
 

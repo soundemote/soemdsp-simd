@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Radar
 // soemdsp-native-target: radar
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Sweep/Jerobeam Radar
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamRadar.{h,cpp}
 // (Jerobeam Fenderson's "Radar" Gen~ patch). A polar-coordinate scanner:

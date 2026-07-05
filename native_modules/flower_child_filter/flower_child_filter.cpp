@@ -2,6 +2,8 @@
 // soemdsp-native-label: Flower Child Filter
 // soemdsp-native-target: flowerChildFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Self-Oscillating/Flower Child Filter
+// soemdsp-native-construction: false
 //
 // A resonant self-oscillating filter built from a phase/frequency-modulated
 // sine-derived oscillator whose output is fed through two cascaded one-pole

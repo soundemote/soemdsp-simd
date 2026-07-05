@@ -2,6 +2,8 @@
 // soemdsp-native-label: Random Walk
 // soemdsp-native-target: randomWalk
 // soemdsp-native-kind: generator
+// soemdsp-native-path: Generator/Stochastic/Random Walk
+// soemdsp-native-construction: false
 
 // Ported from randomWalkSample in public/node-live-audio-worklet.js. The
 // per-node seed hash (stableSeed(seededKey(nodeId, params.seed, "randomWalk")))

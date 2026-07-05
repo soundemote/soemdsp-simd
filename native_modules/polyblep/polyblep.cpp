@@ -2,6 +2,8 @@
 // soemdsp-native-label: PolyBLEP
 // soemdsp-native-target: polyBlep
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Anti-Aliased/PolyBLEP
+// soemdsp-native-construction: false
 
 namespace {
 

@@ -13,6 +13,481 @@ function nodeLiveIsPolyBlepOscillatorType(type) {
   return type === "osc" || type === "polyBlep" || type === "fbPolyBlepOsc" || type === "sineWavetable";
 }
 
+// Registry-driven native module lifecycle -- see
+// docs/NATIVE_CPP_WASM_MODULE_GUIDE.md. Proof-of-concept batch: collapses
+// the five identical-shape lifecycle touch points (constructor state map,
+// reset state map, createNestedRuntime state map + instantiation, removal
+// destroy loop, native-load handler) into one generic loop driven by this
+// table, instead of hand-duplicating them per module. The bespoke DSP
+// math (JS fallback bodies, evaluateFrame dispatch) stays untouched.
+const nativeStatefulModuleRegistry = Object.freeze([
+  Object.freeze({
+    type: "quadratureOscillator",
+    nativeName: "quadrature_oscillator",
+    stateMapKey: "quadratureOscillatorStates",
+    nativeFlagKey: "nativeQuadratureOscillator",
+    nativeReadyKey: "nativeQuadratureOscillatorReady",
+    createState: "createQuadratureOscillatorState",
+    destroyNativeState: "destroyQuadratureOscillatorNativeState",
+    requiredExports: ["soemdsp_quadrature_oscillator_create", "soemdsp_quadrature_oscillator_sample"],
+  }),
+  Object.freeze({
+    type: "dsfOscillator",
+    nativeName: "dsf_oscillator",
+    stateMapKey: "dsfOscillatorStates",
+    nativeFlagKey: "nativeDsfOscillator",
+    nativeReadyKey: "nativeDsfOscillatorReady",
+    createState: "createDsfOscillatorState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_dsf_oscillator_create", "soemdsp_dsf_oscillator_sample"],
+  }),
+  Object.freeze({
+    type: "keplerBouwkamp",
+    nativeName: "jerobeam_kepler_bouwkamp",
+    stateMapKey: "keplerBouwkampStates",
+    nativeFlagKey: "nativeKeplerBouwkamp",
+    nativeReadyKey: "nativeKeplerBouwkampReady",
+    createState: "createKeplerBouwkampState",
+    destroyNativeState: "destroyKeplerBouwkampNativeState",
+    requiredExports: [
+      "soemdsp_jbkepler_create",
+      "soemdsp_jbkepler_sample",
+      "soemdsp_jbkepler_x",
+      "soemdsp_jbkepler_y",
+    ],
+  }),
+  Object.freeze({
+    type: "flowerChildFilter",
+    nativeName: "flower_child_filter",
+    stateMapKey: "flowerChildFilterStates",
+    nativeFlagKey: "nativeFlowerChildFilter",
+    nativeReadyKey: "nativeFlowerChildFilterReady",
+    createState: "createFlowerChildFilterState",
+    destroyNativeState: "destroyFlowerChildFilterNativeState",
+    requiredExports: ["soemdsp_flower_child_filter_create", "soemdsp_flower_child_filter_sample"],
+  }),
+  Object.freeze({
+    type: "noiseGenerator",
+    nativeName: "noise_generator",
+    stateMapKey: "noiseGeneratorStates",
+    nativeFlagKey: "nativeNoiseGenerator",
+    nativeReadyKey: "nativeNoiseGeneratorReady",
+    createState: "createNoiseGeneratorState",
+    destroyNativeState: "destroyNoiseGeneratorNativeState",
+    requiredExports: ["soemdsp_noise_generator_create", "soemdsp_noise_generator_sample", "soemdsp_noise_generator_left", "soemdsp_noise_generator_right"],
+  }),
+  Object.freeze({
+    type: "fractalBrownianNoise",
+    nativeName: "fractal_brownian_noise",
+    stateMapKey: "fractalBrownianNoiseStates",
+    nativeFlagKey: "nativeFbm",
+    nativeReadyKey: "nativeFbmReady",
+    createState: "createFractalBrownianNoiseState",
+    destroyNativeState: "destroyFbmNativeState",
+    requiredExports: ["soemdsp_fbm_create", "soemdsp_fbm_sample", "soemdsp_fbm_x", "soemdsp_fbm_y", "soemdsp_fbm_z"],
+  }),
+  Object.freeze({
+    type: "ladderFilter",
+    nativeName: "ladder_filter",
+    stateMapKey: "ladderFilterStates",
+    nativeFlagKey: "nativeLadderFilter",
+    nativeReadyKey: "nativeLadderFilterReady",
+    createState: "createLadderFilterState",
+    destroyNativeState: "destroyLadderFilterNativeState",
+    requiredExports: ["soemdsp_ladder_filter_create", "soemdsp_ladder_filter_sample"],
+  }),
+  Object.freeze({
+    type: "slewLimiter",
+    nativeName: "slew_limiter",
+    stateMapKey: "slewLimiterStates",
+    nativeFlagKey: "nativeSlewLimiter",
+    nativeReadyKey: "nativeSlewLimiterReady",
+    createState: "createSlewLimiterState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_slew_limiter_create", "soemdsp_slew_limiter_sample"],
+  }),
+  Object.freeze({
+    type: "sampleHold",
+    nativeName: "sample_hold",
+    stateMapKey: "sampleHoldStates",
+    nativeFlagKey: "nativeSampleHold",
+    nativeReadyKey: "nativeSampleHoldReady",
+    createState: "createSampleHoldState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_sample_hold_create", "soemdsp_sample_hold_sample"],
+  }),
+  Object.freeze({
+    type: "expAdsr",
+    nativeName: "exp_adsr",
+    stateMapKey: "expAdsrStates",
+    nativeFlagKey: "nativeExpAdsr",
+    nativeReadyKey: "nativeExpAdsrReady",
+    createState: "createExpAdsrState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_exp_adsr_create", "soemdsp_exp_adsr_sample"],
+  }),
+  Object.freeze({
+    type: "linearEnvelope",
+    nativeName: "linear_envelope",
+    stateMapKey: "linearEnvelopeStates",
+    nativeFlagKey: "nativeLinearEnvelope",
+    nativeReadyKey: "nativeLinearEnvelopeReady",
+    createState: "createLinearEnvelopeState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_linear_envelope_create", "soemdsp_linear_envelope_sample"],
+  }),
+  Object.freeze({
+    type: "pluckEnvelope",
+    nativeName: "pluck_envelope",
+    stateMapKey: "pluckEnvelopeStates",
+    nativeFlagKey: "nativePluckEnvelope",
+    nativeReadyKey: "nativePluckEnvelopeReady",
+    createState: "createPluckEnvelopeState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_pluck_envelope_create", "soemdsp_pluck_envelope_sample"],
+  }),
+  Object.freeze({
+    type: "cookbookFilter",
+    nativeName: "cookbook_filter",
+    stateMapKey: "cookbookFilterStates",
+    nativeFlagKey: "nativeCookbookFilter",
+    nativeReadyKey: "nativeCookbookFilterReady",
+    createState: "createCookbookFilterState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_cookbook_filter_create", "soemdsp_cookbook_filter_sample"],
+  }),
+  Object.freeze({
+    type: "delayEffect",
+    nativeName: "delay_effect",
+    stateMapKey: "delayEffectStates",
+    nativeFlagKey: "nativeDelayEffect",
+    nativeReadyKey: "nativeDelayEffectReady",
+    createState: "createDelayEffectState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_delay_effect_create", "soemdsp_delay_effect_sample", "soemdsp_delay_effect_last_wet"],
+  }),
+  Object.freeze({
+    type: "randomWalk",
+    nativeName: "random_walk",
+    stateMapKey: "randomWalkStates",
+    nativeFlagKey: "nativeRandomWalk",
+    nativeReadyKey: "nativeRandomWalkReady",
+    createState: "createRandomWalkState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_random_walk_create", "soemdsp_random_walk_sample"],
+  }),
+  Object.freeze({
+    type: "chordMemory",
+    nativeName: "chord_memory",
+    stateMapKey: "chordMemoryStates",
+    nativeFlagKey: "nativeChordMemory",
+    nativeReadyKey: "nativeChordMemoryReady",
+    createState: "createChordMemoryState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_chord_memory_create", "soemdsp_chord_memory_sample", "soemdsp_chord_memory_note", "soemdsp_chord_memory_arp"],
+  }),
+  Object.freeze({
+    type: "turingMachine",
+    nativeName: "turing_machine",
+    stateMapKey: "turingMachineStates",
+    nativeFlagKey: "nativeTuringMachine",
+    nativeReadyKey: "nativeTuringMachineReady",
+    createState: "createTuringMachineState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_turing_machine_create", "soemdsp_turing_machine_sample", "soemdsp_turing_machine_scale", "soemdsp_turing_machine_gate"],
+  }),
+  Object.freeze({
+    type: "yellowjacketFilter",
+    nativeName: "yellowjacket_filter",
+    stateMapKey: "yellowjacketFilterStates",
+    nativeFlagKey: "nativeYellowjacketFilter",
+    nativeReadyKey: "nativeYellowjacketFilterReady",
+    createState: "createYellowjacketFilterState",
+    destroyNativeState: "destroyYellowjacketFilterNativeState",
+    requiredExports: ["soemdsp_yellowjacket_filter_create", "soemdsp_yellowjacket_filter_sample"],
+  }),
+  Object.freeze({
+    type: "superloveFilter",
+    nativeName: "superlove_filter",
+    stateMapKey: "superloveFilterStates",
+    nativeFlagKey: "nativeSuperloveFilter",
+    nativeReadyKey: "nativeSuperloveFilterReady",
+    createState: "createSuperloveFilterState",
+    destroyNativeState: "destroySuperloveFilterNativeState",
+    requiredExports: ["soemdsp_superlove_filter_create", "soemdsp_superlove_filter_sample"],
+  }),
+  Object.freeze({
+    type: "rsmetFilter",
+    nativeName: "rsmet_filter",
+    stateMapKey: "rsmetFilterStates",
+    nativeFlagKey: "nativeRsmetFilter",
+    nativeReadyKey: "nativeRsmetFilterReady",
+    createState: "createRsmetFilterState",
+    destroyNativeState: "destroyRsmetFilterNativeState",
+    requiredExports: ["soemdsp_rsmet_filter_create", "soemdsp_rsmet_filter_sample"],
+  }),
+  Object.freeze({
+    type: "chaoticPhaseLockingFilter",
+    nativeName: "chaotic_phase_locking_filter",
+    stateMapKey: "chaoticPhaseLockingFilterStates",
+    nativeFlagKey: "nativeChaoticPhaseLockingFilter",
+    nativeReadyKey: "nativeChaoticPhaseLockingFilterReady",
+    createState: "createChaoticPhaseLockingFilterState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_chaotic_phase_locking_filter_create", "soemdsp_chaotic_phase_locking_filter_sample"],
+  }),
+  Object.freeze({
+    type: "resonatorFilter",
+    nativeName: "resonator_filter",
+    stateMapKey: "resonatorFilterStates",
+    nativeFlagKey: "nativeResonatorFilter",
+    nativeReadyKey: "nativeResonatorFilterReady",
+    createState: "createResonatorFilterState",
+    destroyNativeState: "destroyResonatorFilterNativeState",
+    requiredExports: ["soemdsp_resonator_filter_create", "soemdsp_resonator_filter_sample"],
+  }),
+  Object.freeze({
+    type: "humanFilter",
+    nativeName: "human_filter",
+    stateMapKey: "humanFilterStates",
+    nativeFlagKey: "nativeHumanFilter",
+    nativeReadyKey: "nativeHumanFilterReady",
+    createState: "createHumanFilterState",
+    destroyNativeState: "destroyHumanFilterNativeState",
+    requiredExports: ["soemdsp_human_filter_create", "soemdsp_human_filter_sample"],
+  }),
+  Object.freeze({
+    type: "passiveFilter",
+    nativeName: "passive_filter",
+    stateMapKey: "passiveFilterStates",
+    nativeFlagKey: "nativePassiveFilter",
+    nativeReadyKey: "nativePassiveFilterReady",
+    createState: "createPassiveFilterState",
+    destroyNativeState: "destroyPassiveFilterNativeState",
+    requiredExports: ["soemdsp_passive_filter_create", "soemdsp_passive_filter_sample"],
+  }),
+  Object.freeze({
+    type: "polyBlep",
+    nativeName: "polyblep",
+    stateMapKey: "polyBlepStates",
+    nativeFlagKey: "nativePolyBlep",
+    nativeReadyKey: "nativePolyBlepReady",
+    createState: "createPolyBlepState",
+    destroyNativeState: "destroyPolyBlepNativeState",
+    requiredExports: ["soemdsp_polyblep_create", "soemdsp_polyblep_sample", "soemdsp_polyblep_out"],
+  }),
+  Object.freeze({
+    type: "lorenzAttractor",
+    nativeName: "lorenz_attractor",
+    stateMapKey: "lorenzAttractorStates",
+    nativeFlagKey: "nativeLorenzAttractor",
+    nativeReadyKey: "nativeLorenzAttractorReady",
+    createState: "createLorenzAttractorState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_lorenz_attractor_create", "soemdsp_lorenz_attractor_sample", "soemdsp_lorenz_attractor_x", "soemdsp_lorenz_attractor_y", "soemdsp_lorenz_attractor_z"],
+  }),
+  Object.freeze({
+    type: "pll",
+    nativeName: "pll",
+    stateMapKey: "pllStates",
+    nativeFlagKey: "nativePll",
+    nativeReadyKey: "nativePllReady",
+    createState: "createPllState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_pll_create", "soemdsp_pll_process", "soemdsp_pll_vco_out"],
+  }),
+  Object.freeze({
+    type: "helmholtzPitch",
+    nativeName: "helmholtz",
+    stateMapKey: "helmholtzStates",
+    nativeFlagKey: "nativeHelmholtz",
+    nativeReadyKey: "nativeHelmholtzReady",
+    createState: "createHelmholtzState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_helmholtz_create", "soemdsp_helmholtz_process", "soemdsp_helmholtz_frequency"],
+  }),
+  Object.freeze({
+    type: "reverbEffect",
+    nativeName: "sabrina_reverb",
+    stateMapKey: "reverbEffectStates",
+    nativeFlagKey: "nativeSabrinaReverb",
+    nativeReadyKey: "nativeSabrinaReverbReady",
+    createState: "createSabrinaReverbState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_sabrina_reverb_create", "soemdsp_sabrina_reverb_process", "soemdsp_sabrina_reverb_left", "soemdsp_sabrina_reverb_right"],
+  }),
+  Object.freeze({
+    type: "tb303Filter",
+    nativeName: "tb303_filter",
+    stateMapKey: "tb303FilterStates",
+    nativeFlagKey: "nativeTb303Filter",
+    nativeReadyKey: "nativeTb303FilterReady",
+    createState: "createTb303FilterState",
+    destroyNativeState: "destroyTb303FilterNativeState",
+    requiredExports: ["soemdsp_tb303_filter_create", "soemdsp_tb303_filter_sample"],
+  }),
+  Object.freeze({
+    type: "flowerChildEnvelopeFollower",
+    nativeName: "flower_child_envelope_follower",
+    stateMapKey: "flowerChildEnvelopeFollowerStates",
+    nativeFlagKey: "nativeFlowerChildEnvelopeFollower",
+    nativeReadyKey: "nativeFlowerChildEnvelopeFollowerReady",
+    createState: "createFlowerChildEnvelopeFollowerState",
+    destroyNativeState: null,
+    requiredExports: ["soemdsp_flower_child_envelope_follower_create", "soemdsp_flower_child_envelope_follower_sample"],
+  }),
+  Object.freeze({
+    type: "changeDetector",
+    nativeName: "change_detector",
+    stateMapKey: "changeDetectorStates",
+    nativeFlagKey: "nativeChangeDetector",
+    nativeReadyKey: "nativeChangeDetectorReady",
+    createState: "createChangeDetectorState",
+    destroyNativeState: "destroyChangeDetectorNativeState",
+    requiredExports: ["soemdsp_change_detector_create", "soemdsp_change_detector_sample"],
+  }),
+  Object.freeze({
+    type: "robinSupersaw",
+    nativeName: "robin_supersaw",
+    stateMapKey: "robinSupersawStates",
+    nativeFlagKey: "nativeRobinSupersaw",
+    nativeReadyKey: "nativeRobinSupersawReady",
+    createState: "createRobinSupersawState",
+    destroyNativeState: "destroyRobinSupersawNativeState",
+    requiredExports: ["soemdsp_robin_supersaw_create", "soemdsp_robin_supersaw_sample"],
+  }),
+  Object.freeze({
+    type: "logisticMap",
+    nativeName: "logistic_map",
+    stateMapKey: "logisticMapStates",
+    nativeFlagKey: "nativeLogisticMap",
+    nativeReadyKey: "nativeLogisticMapReady",
+    createState: "createLogisticMapState",
+    destroyNativeState: "destroyLogisticMapNativeState",
+    requiredExports: ["soemdsp_logistic_map_create", "soemdsp_logistic_map_sample"],
+  }),
+  Object.freeze({
+    type: "henonMap",
+    nativeName: "henon_map",
+    stateMapKey: "henonMapStates",
+    nativeFlagKey: "nativeHenonMap",
+    nativeReadyKey: "nativeHenonMapReady",
+    createState: "createHenonMapState",
+    destroyNativeState: "destroyHenonMapNativeState",
+    requiredExports: ["soemdsp_henon_map_create", "soemdsp_henon_map_sample", "soemdsp_henon_map_x", "soemdsp_henon_map_y"],
+  }),
+  Object.freeze({
+    type: "chuaAttractor",
+    nativeName: "chua_attractor",
+    stateMapKey: "chuaAttractorStates",
+    nativeFlagKey: "nativeChuaAttractor",
+    nativeReadyKey: "nativeChuaAttractorReady",
+    createState: "createChuaAttractorState",
+    destroyNativeState: "destroyChuaAttractorNativeState",
+    requiredExports: ["soemdsp_chua_attractor_create", "soemdsp_chua_attractor_sample", "soemdsp_chua_attractor_x", "soemdsp_chua_attractor_y", "soemdsp_chua_attractor_z"],
+  }),
+  Object.freeze({
+    type: "wirdoSpiral",
+    nativeName: "jerobeam_wirdo_spiral",
+    stateMapKey: "wirdoSpiralStates",
+    nativeFlagKey: "nativeWirdoSpiral",
+    nativeReadyKey: "nativeWirdoSpiralReady",
+    createState: "createWirdoSpiralState",
+    destroyNativeState: "destroyWirdoSpiralNativeState",
+    requiredExports: ["soemdsp_jbwirdo_create", "soemdsp_jbwirdo_sample", "soemdsp_jbwirdo_x", "soemdsp_jbwirdo_y"],
+  }),
+  Object.freeze({
+    type: "blubb",
+    nativeName: "jerobeam_blubb",
+    stateMapKey: "blubbStates",
+    nativeFlagKey: "nativeBlubb",
+    nativeReadyKey: "nativeBlubbReady",
+    createState: "createBlubbState",
+    destroyNativeState: "destroyBlubbNativeState",
+    requiredExports: ["soemdsp_jbblubb_create", "soemdsp_jbblubb_sample", "soemdsp_jbblubb_x", "soemdsp_jbblubb_y"],
+  }),
+  Object.freeze({
+    type: "mushroom",
+    nativeName: "jerobeam_mushroom",
+    stateMapKey: "mushroomStates",
+    nativeFlagKey: "nativeMushroom",
+    nativeReadyKey: "nativeMushroomReady",
+    createState: "createMushroomState",
+    destroyNativeState: "destroyMushroomNativeState",
+    requiredExports: ["soemdsp_jbmushroom_create", "soemdsp_jbmushroom_sample", "soemdsp_jbmushroom_x", "soemdsp_jbmushroom_y"],
+  }),
+  Object.freeze({
+    type: "boing",
+    nativeName: "jerobeam_boing",
+    stateMapKey: "boingStates",
+    nativeFlagKey: "nativeBoing",
+    nativeReadyKey: "nativeBoingReady",
+    createState: "createBoingState",
+    destroyNativeState: "destroyBoingNativeState",
+    requiredExports: ["soemdsp_jbboing_create", "soemdsp_jbboing_sample", "soemdsp_jbboing_x", "soemdsp_jbboing_y"],
+  }),
+  Object.freeze({
+    type: "torus",
+    nativeName: "jerobeam_torus",
+    stateMapKey: "torusStates",
+    nativeFlagKey: "nativeTorus",
+    nativeReadyKey: "nativeTorusReady",
+    createState: "createTorusState",
+    destroyNativeState: "destroyTorusNativeState",
+    requiredExports: ["soemdsp_jbtorus_create", "soemdsp_jbtorus_sample", "soemdsp_jbtorus_x", "soemdsp_jbtorus_y"],
+  }),
+  Object.freeze({
+    type: "nyquistShannon",
+    nativeName: "jerobeam_nyquist_shannon",
+    stateMapKey: "nyquistShannonStates",
+    nativeFlagKey: "nativeNyquistShannon",
+    nativeReadyKey: "nativeNyquistShannonReady",
+    createState: "createNyquistShannonState",
+    destroyNativeState: "destroyNyquistShannonNativeState",
+    requiredExports: ["soemdsp_jbnyquist_create", "soemdsp_jbnyquist_sample", "soemdsp_jbnyquist_x", "soemdsp_jbnyquist_y"],
+  }),
+  Object.freeze({
+    type: "radar",
+    nativeName: "jerobeam_radar",
+    stateMapKey: "radarStates",
+    nativeFlagKey: "nativeRadar",
+    nativeReadyKey: "nativeRadarReady",
+    createState: "createRadarState",
+    destroyNativeState: "destroyRadarNativeState",
+    requiredExports: ["soemdsp_jbradar_create", "soemdsp_jbradar_sample", "soemdsp_jbradar_x", "soemdsp_jbradar_y"],
+  }),
+  Object.freeze({
+    type: "pitchQuantizer",
+    nativeName: "pitch_quantizer",
+    stateMapKey: "pitchQuantizerStates",
+    nativeFlagKey: "nativePitchQuantizer",
+    nativeReadyKey: "nativePitchQuantizerReady",
+    createState: "createPitchQuantizerState",
+    destroyNativeState: "destroyPitchQuantizerNativeState",
+    requiredExports: ["soemdsp_pitch_quantizer_create", "soemdsp_pitch_quantizer_sample"],
+  }),
+  Object.freeze({
+    type: "surgeOscillator",
+    nativeName: "surge_oscillator",
+    stateMapKey: "surgeOscillatorStates",
+    nativeFlagKey: "nativeSurgeOscillator",
+    nativeReadyKey: "nativeSurgeOscillatorReady",
+    createState: "createSurgeOscillatorState",
+    destroyNativeState: "destroySurgeOscillatorNativeState",
+    requiredExports: ["soemdsp_surge_oscillator_create", "soemdsp_surge_oscillator_sample"],
+  }),
+  Object.freeze({
+    type: ["vactrolEnvelope", "vactrolEnvelopeC4"],
+    nativeName: "vactrol_envelope",
+    stateMapKey: "vactrolEnvelopeStates",
+    nativeFlagKey: "nativeVactrolEnvelope",
+    nativeReadyKey: "nativeVactrolEnvelopeReady",
+    createState: "createVactrolEnvelopeState",
+    destroyNativeState: "destroyVactrolEnvelopeNativeState",
+    requiredExports: ["soemdsp_vactrol_envelope_create", "soemdsp_vactrol_envelope_sample"],
+  }),
+]);
+
 const nodeLiveSineWavetableSize = 2048;
 const nodeLiveSineWavetable = new Float32Array(nodeLiveSineWavetableSize + 1);
 for (let index = 0; index <= nodeLiveSineWavetableSize; index += 1) {
@@ -127,122 +602,23 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.raptEllipticDecimatorLeft = this.createRaptEllipticDecimatorState();
     this.raptEllipticDecimatorRight = this.createRaptEllipticDecimatorState();
     this.raptEllipticDecimatorRatio = 1;
-    this.passiveFilterStates = new Map();
     this.clockDividerStates = new Map();
     this.clockStates = new Map();
     this.codeblockFunctions = new Map();
-    this.cookbookFilterStates = new Map();
     this.delayedTriggerStates = new Map();
-    this.delayEffectStates = new Map();
-    this.expAdsrStates = new Map();
     this.ellipsoidOutputFrames = new Map();
     this.nativeEllipsoid = null;
     this.nativeEllipsoidReady = false;
-    this.nativeSabrinaReverb = null;
-    this.nativeSabrinaReverbReady = false;
-    this.nativePll = null;
-    this.nativePllReady = false;
-    this.nativeHelmholtz = null;
-    this.nativeHelmholtzReady = false;
     this.nativeHelmholtzStatusKey = "";
-    this.nativeNoiseGenerator = null;
-    this.nativeNoiseGeneratorReady = false;
-    this.nativeFbm = null;
-    this.nativeFbmReady = false;
-    this.nativeLadderFilter = null;
-    this.nativeLadderFilterReady = false;
-    this.nativeTb303Filter = null;
-    this.nativeTb303FilterReady = false;
-    this.nativePassiveFilter = null;
-    this.nativePassiveFilterReady = false;
-    this.nativeVactrolEnvelope = null;
-    this.nativeVactrolEnvelopeReady = false;
     this.nativeSoftClipper = null;
     this.nativeSoftClipperReady = false;
-    this.nativePolyBlep = null;
-    this.nativePolyBlepReady = false;
-    this.nativeSlewLimiter = null;
-    this.nativeSlewLimiterReady = false;
-    this.nativeSampleHold = null;
-    this.nativeSampleHoldReady = false;
-    this.nativeExpAdsr = null;
-    this.nativeExpAdsrReady = false;
-    this.nativeLinearEnvelope = null;
-    this.nativeLinearEnvelopeReady = false;
-    this.nativePluckEnvelope = null;
-    this.nativePluckEnvelopeReady = false;
-    this.nativeFlowerChildEnvelopeFollower = null;
-    this.nativeFlowerChildEnvelopeFollowerReady = false;
-    this.nativeLorenzAttractor = null;
-    this.nativeLorenzAttractorReady = false;
-    this.nativeCookbookFilter = null;
-    this.nativeCookbookFilterReady = false;
     this.nativeSineWavetable = null;
     this.nativeSineWavetableReady = false;
     this.nativeAdditiveOsc = null;
     this.nativeAdditiveOscReady = false;
-    this.nativeDelayEffect = null;
-    this.nativeDelayEffectReady = false;
-    this.nativeRandomWalk = null;
-    this.nativeRandomWalkReady = false;
-    this.nativeChordMemory = null;
-    this.nativeChordMemoryReady = false;
-    this.nativeTuringMachine = null;
-    this.nativeTuringMachineReady = false;
-    this.nativeChangeDetector = null;
-    this.nativeChangeDetectorReady = false;
-    this.nativeYellowjacketFilter = null;
-    this.nativeYellowjacketFilterReady = false;
-    this.nativeSuperloveFilter = null;
-    this.nativeSuperloveFilterReady = false;
-    this.nativeRsmetFilter = null;
-    this.nativeRsmetFilterReady = false;
-    this.nativeChaoticPhaseLockingFilter = null;
-    this.nativeChaoticPhaseLockingFilterReady = false;
-    this.nativeDsfOscillator = null;
-    this.nativeDsfOscillatorReady = false;
-    this.nativeFlowerChildFilter = null;
-    this.nativeFlowerChildFilterReady = false;
-    this.nativeResonatorFilter = null;
-    this.nativeResonatorFilterReady = false;
-    this.nativeHumanFilter = null;
-    this.nativeHumanFilterReady = false;
-    this.polyBlepStates = new Map();
-    this.pllStates = new Map();
-    this.fractalBrownianNoiseStates = new Map();
+    this.initNativeStatefulModuleMaps(this, { includeNativeFlags: true });
     this.graphInputConnections = new Map();
-    this.flowerChildEnvelopeFollowerStates = new Map();
-    this.ladderFilterStates = new Map();
-    this.tb303FilterStates = new Map();
-    this.linearEnvelopeStates = new Map();
     this.logSpiralStates = new Map();
-    this.lorenzAttractorStates = new Map();
-    this.logisticMapStates = new Map();
-    this.henonMapStates = new Map();
-    this.chuaAttractorStates = new Map();
-    this.wirdoSpiralStates = new Map();
-    this.blubbStates = new Map();
-    this.mushroomStates = new Map();
-    this.boingStates = new Map();
-    this.torusStates = new Map();
-    this.keplerBouwkampStates = new Map();
-    this.nyquistShannonStates = new Map();
-    this.radarStates = new Map();
-    this.chordMemoryStates = new Map();
-    this.turingMachineStates = new Map();
-    this.changeDetectorStates = new Map();
-    this.yellowjacketFilterStates = new Map();
-    this.superloveFilterStates = new Map();
-    this.rsmetFilterStates = new Map();
-    this.chaoticPhaseLockingFilterStates = new Map();
-    this.dsfOscillatorStates = new Map();
-    this.robinSupersawStates = new Map();
-    this.flowerChildFilterStates = new Map();
-    this.resonatorFilterStates = new Map();
-    this.humanFilterStates = new Map();
-    this.pitchQuantizerStates = new Map();
-    this.surgeOscillatorStates = new Map();
-    this.noiseGeneratorStates = new Map();
     this.oscResetStates = new Map();
     this.graphLfoStates = new Map();
     this.oscillatorLastPhaseIncrements = new Map();
@@ -251,20 +627,15 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.patchFingerprint = "";
     this.patchCommandStates = new Map();
     this.phases = new Map();
-    this.pluckEnvelopeStates = new Map();
     this.planSerial = 0;
     this.randomClockStates = new Map();
-    this.reverbEffectStates = new Map();
-    this.sampleHoldStates = new Map();
     this.samplePlaybackStates = new Map();
     this.samples = new Map();
-    this.randomWalkStates = new Map();
     this.sessionId = 0;
     this.scopeBuffers = new Map();
     this.scopeCaptureNodeIds = [];
     this.scopeCounter = 0;
     this.scopeSampleStride = 1;
-    this.slewLimiterStates = new Map();
     this.smoothers = new Map();
     this.spiralStates = new Map();
     this.fractalSpiralStates = new Map();
@@ -276,7 +647,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.triggerCounterStates = new Map();
     this.triggerDividerStates = new Map();
     this.triangleStates = new Map();
-    this.vactrolEnvelopeStates = new Map();
     this.visualInputBuffers = new Map();
     this.visualSinks = [];
     this.resetVisualControls();
@@ -684,77 +1054,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         });
         return;
       }
-      if (name === "pll" || targetType === "pll") {
-        for (const state of this.pllStates.values()) {
-          this.destroyPllState(state);
-        }
-        this.nativePll = exports;
-        this.nativePllReady = Boolean(
-          this.nativePll?.soemdsp_pll_create &&
-          this.nativePll?.soemdsp_pll_process &&
-          this.nativePll?.soemdsp_pll_vco_out,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "pll",
-          status: this.nativePllReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "helmholtz" || targetType === "helmholtzPitch") {
-        for (const state of this.helmholtzStates.values()) {
-          this.destroyHelmholtzState(state);
-        }
-        this.nativeHelmholtz = exports;
-        this.nativeHelmholtzStatusKey = "";
-        this.nativeHelmholtzReady = Boolean(
-          this.nativeHelmholtz?.soemdsp_helmholtz_create &&
-          this.nativeHelmholtz?.soemdsp_helmholtz_process &&
-          this.nativeHelmholtz?.soemdsp_helmholtz_frequency,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "helmholtz",
-          status: this.nativeHelmholtzReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "sabrina_reverb" || targetType === "reverbEffect") {
-        for (const state of this.reverbEffectStates.values()) {
-          this.destroySabrinaReverbState(state);
-        }
-        this.nativeSabrinaReverb = exports;
-        this.nativeSabrinaReverbReady = Boolean(
-          this.nativeSabrinaReverb?.soemdsp_sabrina_reverb_create &&
-          this.nativeSabrinaReverb?.soemdsp_sabrina_reverb_process &&
-          this.nativeSabrinaReverb?.soemdsp_sabrina_reverb_left &&
-          this.nativeSabrinaReverb?.soemdsp_sabrina_reverb_right,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "sabrina_reverb",
-          status: this.nativeSabrinaReverbReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "noise_generator" || targetType === "noiseGenerator") {
-        for (const state of this.noiseGeneratorStates.values()) {
-          this.destroyNoiseGeneratorNativeState(state);
-        }
-        this.nativeNoiseGenerator = exports;
-        this.nativeNoiseGeneratorReady = Boolean(
-          this.nativeNoiseGenerator?.soemdsp_noise_generator_create &&
-          this.nativeNoiseGenerator?.soemdsp_noise_generator_sample &&
-          this.nativeNoiseGenerator?.soemdsp_noise_generator_left &&
-          this.nativeNoiseGenerator?.soemdsp_noise_generator_right,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "noise_generator",
-          status: this.nativeNoiseGeneratorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
       if (name === "soft_clipper" || targetType === "softClipper") {
         this.nativeSoftClipper = exports;
         this.nativeSoftClipperReady = Boolean(
@@ -764,190 +1063,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
           type: "nativeModuleStatus",
           name: "soft_clipper",
           status: this.nativeSoftClipperReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "fractal_brownian_noise" || targetType === "fractalBrownianNoise") {
-        for (const state of this.fractalBrownianNoiseStates.values()) {
-          this.destroyFbmNativeState(state);
-        }
-        this.nativeFbm = exports;
-        this.nativeFbmReady = Boolean(
-          this.nativeFbm?.soemdsp_fbm_create &&
-          this.nativeFbm?.soemdsp_fbm_sample &&
-          this.nativeFbm?.soemdsp_fbm_x &&
-          this.nativeFbm?.soemdsp_fbm_y &&
-          this.nativeFbm?.soemdsp_fbm_z,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "fractal_brownian_noise",
-          status: this.nativeFbmReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "ladder_filter" || targetType === "ladderFilter") {
-        for (const state of this.ladderFilterStates.values()) {
-          this.destroyLadderFilterNativeState(state);
-        }
-        this.nativeLadderFilter = exports;
-        this.nativeLadderFilterReady = Boolean(
-          this.nativeLadderFilter?.soemdsp_ladder_filter_create &&
-          this.nativeLadderFilter?.soemdsp_ladder_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "ladder_filter",
-          status: this.nativeLadderFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "tb303_filter" || targetType === "tb303Filter") {
-        for (const state of this.tb303FilterStates.values()) {
-          this.destroyTb303FilterNativeState(state);
-        }
-        this.nativeTb303Filter = exports;
-        this.nativeTb303FilterReady = Boolean(
-          this.nativeTb303Filter?.soemdsp_tb303_filter_create &&
-          this.nativeTb303Filter?.soemdsp_tb303_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "tb303_filter",
-          status: this.nativeTb303FilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "slew_limiter" || targetType === "slewLimiter") {
-        for (const state of this.slewLimiterStates.values()) {
-          if (state.nativeHandle && this.nativeSlewLimiter?.soemdsp_slew_limiter_destroy) {
-            this.nativeSlewLimiter.soemdsp_slew_limiter_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeSlewLimiter = exports;
-        this.nativeSlewLimiterReady = Boolean(
-          this.nativeSlewLimiter?.soemdsp_slew_limiter_create &&
-          this.nativeSlewLimiter?.soemdsp_slew_limiter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "slew_limiter",
-          status: this.nativeSlewLimiterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "sample_hold" || targetType === "sampleHold") {
-        for (const state of this.sampleHoldStates.values()) {
-          if (state.nativeHandle && this.nativeSampleHold?.soemdsp_sample_hold_destroy) {
-            this.nativeSampleHold.soemdsp_sample_hold_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeSampleHold = exports;
-        this.nativeSampleHoldReady = Boolean(
-          this.nativeSampleHold?.soemdsp_sample_hold_create &&
-          this.nativeSampleHold?.soemdsp_sample_hold_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "sample_hold",
-          status: this.nativeSampleHoldReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "exp_adsr" || targetType === "expAdsr") {
-        for (const state of this.expAdsrStates.values()) {
-          if (state.nativeHandle && this.nativeExpAdsr?.soemdsp_exp_adsr_destroy) {
-            this.nativeExpAdsr.soemdsp_exp_adsr_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeExpAdsr = exports;
-        this.nativeExpAdsrReady = Boolean(
-          this.nativeExpAdsr?.soemdsp_exp_adsr_create &&
-          this.nativeExpAdsr?.soemdsp_exp_adsr_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "exp_adsr",
-          status: this.nativeExpAdsrReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "linear_envelope" || targetType === "linearEnvelope") {
-        for (const state of this.linearEnvelopeStates.values()) {
-          if (state.nativeHandle && this.nativeLinearEnvelope?.soemdsp_linear_envelope_destroy) {
-            this.nativeLinearEnvelope.soemdsp_linear_envelope_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeLinearEnvelope = exports;
-        this.nativeLinearEnvelopeReady = Boolean(
-          this.nativeLinearEnvelope?.soemdsp_linear_envelope_create &&
-          this.nativeLinearEnvelope?.soemdsp_linear_envelope_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "linear_envelope",
-          status: this.nativeLinearEnvelopeReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "pluck_envelope" || targetType === "pluckEnvelope") {
-        for (const state of this.pluckEnvelopeStates.values()) {
-          if (state.nativeHandle && this.nativePluckEnvelope?.soemdsp_pluck_envelope_destroy) {
-            this.nativePluckEnvelope.soemdsp_pluck_envelope_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativePluckEnvelope = exports;
-        this.nativePluckEnvelopeReady = Boolean(
-          this.nativePluckEnvelope?.soemdsp_pluck_envelope_create &&
-          this.nativePluckEnvelope?.soemdsp_pluck_envelope_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "pluck_envelope",
-          status: this.nativePluckEnvelopeReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "flower_child_envelope_follower" || targetType === "flowerChildEnvelopeFollower") {
-        for (const state of this.flowerChildEnvelopeFollowerStates.values()) {
-          if (state.nativeHandle && this.nativeFlowerChildEnvelopeFollower?.soemdsp_flower_child_envelope_follower_destroy) {
-            this.nativeFlowerChildEnvelopeFollower.soemdsp_flower_child_envelope_follower_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeFlowerChildEnvelopeFollower = exports;
-        this.nativeFlowerChildEnvelopeFollowerReady = Boolean(
-          this.nativeFlowerChildEnvelopeFollower?.soemdsp_flower_child_envelope_follower_create &&
-          this.nativeFlowerChildEnvelopeFollower?.soemdsp_flower_child_envelope_follower_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "flower_child_envelope_follower",
-          status: this.nativeFlowerChildEnvelopeFollowerReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "cookbook_filter" || targetType === "cookbookFilter") {
-        for (const state of this.cookbookFilterStates.values()) {
-          if (state.nativeHandle && this.nativeCookbookFilter?.soemdsp_cookbook_filter_destroy) {
-            this.nativeCookbookFilter.soemdsp_cookbook_filter_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeCookbookFilter = exports;
-        this.nativeCookbookFilterReady = Boolean(
-          this.nativeCookbookFilter?.soemdsp_cookbook_filter_create &&
-          this.nativeCookbookFilter?.soemdsp_cookbook_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "cookbook_filter",
-          status: this.nativeCookbookFilterReady ? "ready" : "missing exports",
         });
         return;
       }
@@ -974,533 +1089,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         });
         return;
       }
-      if (name === "delay_effect" || targetType === "delayEffect") {
-        for (const state of this.delayEffectStates.values()) {
-          if (state.nativeHandle && this.nativeDelayEffect?.soemdsp_delay_effect_destroy) {
-            this.nativeDelayEffect.soemdsp_delay_effect_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeDelayEffect = exports;
-        this.nativeDelayEffectReady = Boolean(
-          this.nativeDelayEffect?.soemdsp_delay_effect_create &&
-          this.nativeDelayEffect?.soemdsp_delay_effect_sample &&
-          this.nativeDelayEffect?.soemdsp_delay_effect_last_wet,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "delay_effect",
-          status: this.nativeDelayEffectReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "random_walk" || targetType === "randomWalk") {
-        for (const state of this.randomWalkStates.values()) {
-          if (state.nativeHandle && this.nativeRandomWalk?.soemdsp_random_walk_destroy) {
-            this.nativeRandomWalk.soemdsp_random_walk_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeRandomWalk = exports;
-        this.nativeRandomWalkReady = Boolean(
-          this.nativeRandomWalk?.soemdsp_random_walk_create &&
-          this.nativeRandomWalk?.soemdsp_random_walk_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "random_walk",
-          status: this.nativeRandomWalkReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "chord_memory" || targetType === "chordMemory") {
-        for (const state of this.chordMemoryStates.values()) {
-          if (state.nativeHandle && this.nativeChordMemory?.soemdsp_chord_memory_destroy) {
-            this.nativeChordMemory.soemdsp_chord_memory_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeChordMemory = exports;
-        this.nativeChordMemoryReady = Boolean(
-          this.nativeChordMemory?.soemdsp_chord_memory_create &&
-          this.nativeChordMemory?.soemdsp_chord_memory_sample &&
-          this.nativeChordMemory?.soemdsp_chord_memory_note &&
-          this.nativeChordMemory?.soemdsp_chord_memory_arp,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "chord_memory",
-          status: this.nativeChordMemoryReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "turing_machine" || targetType === "turingMachine") {
-        for (const state of this.turingMachineStates.values()) {
-          if (state.nativeHandle && this.nativeTuringMachine?.soemdsp_turing_machine_destroy) {
-            this.nativeTuringMachine.soemdsp_turing_machine_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeTuringMachine = exports;
-        this.nativeTuringMachineReady = Boolean(
-          this.nativeTuringMachine?.soemdsp_turing_machine_create &&
-          this.nativeTuringMachine?.soemdsp_turing_machine_sample &&
-          this.nativeTuringMachine?.soemdsp_turing_machine_scale &&
-          this.nativeTuringMachine?.soemdsp_turing_machine_gate,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "turing_machine",
-          status: this.nativeTuringMachineReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "change_detector" || targetType === "changeDetector") {
-        for (const state of this.changeDetectorStates.values()) {
-          this.destroyChangeDetectorNativeState(state);
-        }
-        this.nativeChangeDetector = exports;
-        this.nativeChangeDetectorReady = Boolean(
-          this.nativeChangeDetector?.soemdsp_change_detector_create &&
-          this.nativeChangeDetector?.soemdsp_change_detector_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "change_detector",
-          status: this.nativeChangeDetectorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "yellowjacket_filter" || targetType === "yellowjacketFilter") {
-        for (const state of this.yellowjacketFilterStates.values()) {
-          this.destroyYellowjacketFilterNativeState(state);
-        }
-        this.nativeYellowjacketFilter = exports;
-        this.nativeYellowjacketFilterReady = Boolean(
-          this.nativeYellowjacketFilter?.soemdsp_yellowjacket_filter_create &&
-          this.nativeYellowjacketFilter?.soemdsp_yellowjacket_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "yellowjacket_filter",
-          status: this.nativeYellowjacketFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "superlove_filter" || targetType === "superloveFilter") {
-        for (const state of this.superloveFilterStates.values()) {
-          this.destroySuperloveFilterNativeState(state);
-        }
-        this.nativeSuperloveFilter = exports;
-        this.nativeSuperloveFilterReady = Boolean(
-          this.nativeSuperloveFilter?.soemdsp_superlove_filter_create &&
-          this.nativeSuperloveFilter?.soemdsp_superlove_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "superlove_filter",
-          status: this.nativeSuperloveFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "rsmet_filter" || targetType === "rsmetFilter") {
-        for (const state of this.rsmetFilterStates.values()) {
-          this.destroyRsmetFilterNativeState(state);
-        }
-        this.nativeRsmetFilter = exports;
-        this.nativeRsmetFilterReady = Boolean(
-          this.nativeRsmetFilter?.soemdsp_rsmet_filter_create &&
-          this.nativeRsmetFilter?.soemdsp_rsmet_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "rsmet_filter",
-          status: this.nativeRsmetFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "chaotic_phase_locking_filter" || targetType === "chaoticPhaseLockingFilter") {
-        for (const state of this.chaoticPhaseLockingFilterStates.values()) {
-          if (state.nativeHandle && this.nativeChaoticPhaseLockingFilter?.soemdsp_chaotic_phase_locking_filter_destroy) {
-            this.nativeChaoticPhaseLockingFilter.soemdsp_chaotic_phase_locking_filter_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeChaoticPhaseLockingFilter = exports;
-        this.nativeChaoticPhaseLockingFilterReady = Boolean(
-          this.nativeChaoticPhaseLockingFilter?.soemdsp_chaotic_phase_locking_filter_create &&
-          this.nativeChaoticPhaseLockingFilter?.soemdsp_chaotic_phase_locking_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "chaotic_phase_locking_filter",
-          status: this.nativeChaoticPhaseLockingFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "dsf_oscillator" || targetType === "dsfOscillator") {
-        for (const state of this.dsfOscillatorStates.values()) {
-          this.destroyDsfOscillatorNativeState(state);
-        }
-        this.nativeDsfOscillator = exports;
-        this.nativeDsfOscillatorReady = Boolean(
-          this.nativeDsfOscillator?.soemdsp_dsf_oscillator_create &&
-          this.nativeDsfOscillator?.soemdsp_dsf_oscillator_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "dsf_oscillator",
-          status: this.nativeDsfOscillatorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "robin_supersaw" || targetType === "robinSupersaw") {
-        for (const state of this.robinSupersawStates.values()) {
-          this.destroyRobinSupersawNativeState(state);
-        }
-        this.nativeRobinSupersaw = exports;
-        this.nativeRobinSupersawReady = Boolean(
-          this.nativeRobinSupersaw?.soemdsp_robin_supersaw_create &&
-          this.nativeRobinSupersaw?.soemdsp_robin_supersaw_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "robin_supersaw",
-          status: this.nativeRobinSupersawReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "flower_child_filter" || targetType === "flowerChildFilter") {
-        for (const state of this.flowerChildFilterStates.values()) {
-          this.destroyFlowerChildFilterNativeState(state);
-        }
-        this.nativeFlowerChildFilter = exports;
-        this.nativeFlowerChildFilterReady = Boolean(
-          this.nativeFlowerChildFilter?.soemdsp_flower_child_filter_create &&
-          this.nativeFlowerChildFilter?.soemdsp_flower_child_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "flower_child_filter",
-          status: this.nativeFlowerChildFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "resonator_filter" || targetType === "resonatorFilter") {
-        for (const state of this.resonatorFilterStates.values()) {
-          this.destroyResonatorFilterNativeState(state);
-        }
-        this.nativeResonatorFilter = exports;
-        this.nativeResonatorFilterReady = Boolean(
-          this.nativeResonatorFilter?.soemdsp_resonator_filter_create &&
-          this.nativeResonatorFilter?.soemdsp_resonator_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "resonator_filter",
-          status: this.nativeResonatorFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "human_filter" || targetType === "humanFilter") {
-        for (const state of this.humanFilterStates.values()) {
-          this.destroyHumanFilterNativeState(state);
-        }
-        this.nativeHumanFilter = exports;
-        this.nativeHumanFilterReady = Boolean(
-          this.nativeHumanFilter?.soemdsp_human_filter_create &&
-          this.nativeHumanFilter?.soemdsp_human_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "human_filter",
-          status: this.nativeHumanFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "passive_filter" || targetType === "passiveFilter") {
-        for (const state of this.passiveFilterStates.values()) {
-          this.destroyPassiveFilterNativeState(state);
-        }
-        this.nativePassiveFilter = exports;
-        this.nativePassiveFilterReady = Boolean(
-          this.nativePassiveFilter?.soemdsp_passive_filter_create &&
-          this.nativePassiveFilter?.soemdsp_passive_filter_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "passive_filter",
-          status: this.nativePassiveFilterReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "vactrol_envelope" || targetType === "vactrolEnvelope" || targetType === "vactrolEnvelopeC4") {
-        for (const state of this.vactrolEnvelopeStates.values()) {
-          this.destroyVactrolEnvelopeNativeState(state);
-        }
-        this.nativeVactrolEnvelope = exports;
-        this.nativeVactrolEnvelopeReady = Boolean(
-          this.nativeVactrolEnvelope?.soemdsp_vactrol_envelope_create &&
-          this.nativeVactrolEnvelope?.soemdsp_vactrol_envelope_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "vactrol_envelope",
-          status: this.nativeVactrolEnvelopeReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "logistic_map" || targetType === "logisticMap") {
-        for (const state of this.logisticMapStates.values()) {
-          this.destroyLogisticMapNativeState(state);
-        }
-        this.nativeLogisticMap = exports;
-        this.nativeLogisticMapReady = Boolean(
-          this.nativeLogisticMap?.soemdsp_logistic_map_create &&
-          this.nativeLogisticMap?.soemdsp_logistic_map_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "logistic_map",
-          status: this.nativeLogisticMapReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "henon_map" || targetType === "henonMap") {
-        for (const state of this.henonMapStates.values()) {
-          this.destroyHenonMapNativeState(state);
-        }
-        this.nativeHenonMap = exports;
-        this.nativeHenonMapReady = Boolean(
-          this.nativeHenonMap?.soemdsp_henon_map_create &&
-          this.nativeHenonMap?.soemdsp_henon_map_sample &&
-          this.nativeHenonMap?.soemdsp_henon_map_x &&
-          this.nativeHenonMap?.soemdsp_henon_map_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "henon_map",
-          status: this.nativeHenonMapReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "lorenz_attractor" || targetType === "lorenzAttractor") {
-        for (const state of this.lorenzAttractorStates.values()) {
-          if (state.nativeHandle && this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_destroy) {
-            this.nativeLorenzAttractor.soemdsp_lorenz_attractor_destroy(state.nativeHandle);
-          }
-          state.nativeHandle = 0;
-        }
-        this.nativeLorenzAttractor = exports;
-        this.nativeLorenzAttractorReady = Boolean(
-          this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_create &&
-          this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_sample &&
-          this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_x &&
-          this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_y &&
-          this.nativeLorenzAttractor?.soemdsp_lorenz_attractor_z,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "lorenz_attractor",
-          status: this.nativeLorenzAttractorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "chua_attractor" || targetType === "chuaAttractor") {
-        for (const state of this.chuaAttractorStates.values()) {
-          this.destroyChuaAttractorNativeState(state);
-        }
-        this.nativeChuaAttractor = exports;
-        this.nativeChuaAttractorReady = Boolean(
-          this.nativeChuaAttractor?.soemdsp_chua_attractor_create &&
-          this.nativeChuaAttractor?.soemdsp_chua_attractor_sample &&
-          this.nativeChuaAttractor?.soemdsp_chua_attractor_x &&
-          this.nativeChuaAttractor?.soemdsp_chua_attractor_y &&
-          this.nativeChuaAttractor?.soemdsp_chua_attractor_z,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "chua_attractor",
-          status: this.nativeChuaAttractorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_wirdo_spiral" || targetType === "wirdoSpiral") {
-        for (const state of this.wirdoSpiralStates.values()) {
-          this.destroyWirdoSpiralNativeState(state);
-        }
-        this.nativeWirdoSpiral = exports;
-        this.nativeWirdoSpiralReady = Boolean(
-          this.nativeWirdoSpiral?.soemdsp_jbwirdo_create &&
-          this.nativeWirdoSpiral?.soemdsp_jbwirdo_sample &&
-          this.nativeWirdoSpiral?.soemdsp_jbwirdo_x &&
-          this.nativeWirdoSpiral?.soemdsp_jbwirdo_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_wirdo_spiral",
-          status: this.nativeWirdoSpiralReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_blubb" || targetType === "blubb") {
-        for (const state of this.blubbStates.values()) {
-          this.destroyBlubbNativeState(state);
-        }
-        this.nativeBlubb = exports;
-        this.nativeBlubbReady = Boolean(
-          this.nativeBlubb?.soemdsp_jbblubb_create &&
-          this.nativeBlubb?.soemdsp_jbblubb_sample &&
-          this.nativeBlubb?.soemdsp_jbblubb_x &&
-          this.nativeBlubb?.soemdsp_jbblubb_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_blubb",
-          status: this.nativeBlubbReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_mushroom" || targetType === "mushroom") {
-        for (const state of this.mushroomStates.values()) {
-          this.destroyMushroomNativeState(state);
-        }
-        this.nativeMushroom = exports;
-        this.nativeMushroomReady = Boolean(
-          this.nativeMushroom?.soemdsp_jbmushroom_create &&
-          this.nativeMushroom?.soemdsp_jbmushroom_sample &&
-          this.nativeMushroom?.soemdsp_jbmushroom_x &&
-          this.nativeMushroom?.soemdsp_jbmushroom_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_mushroom",
-          status: this.nativeMushroomReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_boing" || targetType === "boing") {
-        for (const state of this.boingStates.values()) {
-          this.destroyBoingNativeState(state);
-        }
-        this.nativeBoing = exports;
-        this.nativeBoingReady = Boolean(
-          this.nativeBoing?.soemdsp_jbboing_create &&
-          this.nativeBoing?.soemdsp_jbboing_sample &&
-          this.nativeBoing?.soemdsp_jbboing_x &&
-          this.nativeBoing?.soemdsp_jbboing_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_boing",
-          status: this.nativeBoingReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_torus" || targetType === "torus") {
-        for (const state of this.torusStates.values()) {
-          this.destroyTorusNativeState(state);
-        }
-        this.nativeTorus = exports;
-        this.nativeTorusReady = Boolean(
-          this.nativeTorus?.soemdsp_jbtorus_create &&
-          this.nativeTorus?.soemdsp_jbtorus_sample &&
-          this.nativeTorus?.soemdsp_jbtorus_x &&
-          this.nativeTorus?.soemdsp_jbtorus_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_torus",
-          status: this.nativeTorusReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_kepler_bouwkamp" || targetType === "keplerBouwkamp") {
-        for (const state of this.keplerBouwkampStates.values()) {
-          this.destroyKeplerBouwkampNativeState(state);
-        }
-        this.nativeKeplerBouwkamp = exports;
-        this.nativeKeplerBouwkampReady = Boolean(
-          this.nativeKeplerBouwkamp?.soemdsp_jbkepler_create &&
-          this.nativeKeplerBouwkamp?.soemdsp_jbkepler_sample &&
-          this.nativeKeplerBouwkamp?.soemdsp_jbkepler_x &&
-          this.nativeKeplerBouwkamp?.soemdsp_jbkepler_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_kepler_bouwkamp",
-          status: this.nativeKeplerBouwkampReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_nyquist_shannon" || targetType === "nyquistShannon") {
-        for (const state of this.nyquistShannonStates.values()) {
-          this.destroyNyquistShannonNativeState(state);
-        }
-        this.nativeNyquistShannon = exports;
-        this.nativeNyquistShannonReady = Boolean(
-          this.nativeNyquistShannon?.soemdsp_jbnyquist_create &&
-          this.nativeNyquistShannon?.soemdsp_jbnyquist_sample &&
-          this.nativeNyquistShannon?.soemdsp_jbnyquist_x &&
-          this.nativeNyquistShannon?.soemdsp_jbnyquist_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_nyquist_shannon",
-          status: this.nativeNyquistShannonReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "jerobeam_radar" || targetType === "radar") {
-        for (const state of this.radarStates.values()) {
-          this.destroyRadarNativeState(state);
-        }
-        this.nativeRadar = exports;
-        this.nativeRadarReady = Boolean(
-          this.nativeRadar?.soemdsp_jbradar_create &&
-          this.nativeRadar?.soemdsp_jbradar_sample &&
-          this.nativeRadar?.soemdsp_jbradar_x &&
-          this.nativeRadar?.soemdsp_jbradar_y,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "jerobeam_radar",
-          status: this.nativeRadarReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "pitch_quantizer" || targetType === "pitchQuantizer") {
-        for (const state of this.pitchQuantizerStates.values()) {
-          this.destroyPitchQuantizerNativeState(state);
-        }
-        this.nativePitchQuantizer = exports;
-        this.nativePitchQuantizerReady = Boolean(
-          this.nativePitchQuantizer?.soemdsp_pitch_quantizer_create &&
-          this.nativePitchQuantizer?.soemdsp_pitch_quantizer_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "pitch_quantizer",
-          status: this.nativePitchQuantizerReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "surge_oscillator" || targetType === "surgeOscillator") {
-        for (const state of this.surgeOscillatorStates.values()) {
-          this.destroySurgeOscillatorNativeState(state);
-        }
-        this.nativeSurgeOscillator = exports;
-        this.nativeSurgeOscillatorReady = Boolean(
-          this.nativeSurgeOscillator?.soemdsp_surge_oscillator_create &&
-          this.nativeSurgeOscillator?.soemdsp_surge_oscillator_sample,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "surge_oscillator",
-          status: this.nativeSurgeOscillatorReady ? "ready" : "missing exports",
-        });
-        return;
-      }
       if (name === "shooting_star_explosion" || targetType === "shootingStarExplosion") {
         this.nativeShootingStarExplosion = exports;
         this.nativeShootingStarExplosionReady = Boolean(
@@ -1510,23 +1098,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
           type: "nativeModuleStatus",
           name: "shooting_star_explosion",
           status: this.nativeShootingStarExplosionReady ? "ready" : "missing exports",
-        });
-        return;
-      }
-      if (name === "polyblep" || targetType === "polyBlep") {
-        for (const state of this.polyBlepStates.values()) {
-          this.destroyPolyBlepNativeState(state);
-        }
-        this.nativePolyBlep = exports;
-        this.nativePolyBlepReady = Boolean(
-          this.nativePolyBlep?.soemdsp_polyblep_create &&
-          this.nativePolyBlep?.soemdsp_polyblep_sample &&
-          this.nativePolyBlep?.soemdsp_polyblep_out,
-        );
-        this.port.postMessage({
-          type: "nativeModuleStatus",
-          name: "polyblep",
-          status: this.nativePolyBlepReady ? "ready" : "missing exports",
         });
         return;
       }
@@ -1546,6 +1117,8 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
   }
 
   clearPlan() {
+    this.destroyAllNativeStatefulModuleHandles(this);
+    this.initNativeStatefulModuleMaps(this);
     this.inputConnections = new Map();
     this.triggerPatchBindings = new Map();
     this.triggerPatchGates = new Map();
@@ -1585,77 +1158,34 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     for (const state of this.passiveFilterStates.values()) {
       this.destroyPassiveFilterNativeState(state);
     }
-    this.passiveFilterStates = new Map();
     this.clockDividerStates = new Map();
     this.clockStates = new Map();
     this.codeblockFunctions = new Map();
-    this.cookbookFilterStates = new Map();
     this.delayedTriggerStates = new Map();
-    this.delayEffectStates = new Map();
-    this.expAdsrStates = new Map();
     for (const state of this.fractalBrownianNoiseStates.values()) {
       this.destroyFbmNativeState(state);
     }
-    this.fractalBrownianNoiseStates = new Map();
-    this.flowerChildEnvelopeFollowerStates = new Map();
     for (const state of this.ladderFilterStates.values()) {
       this.destroyLadderFilterNativeState(state);
     }
-    this.ladderFilterStates = new Map();
     for (const state of this.tb303FilterStates.values()) {
       this.destroyTb303FilterNativeState(state);
     }
-    this.tb303FilterStates = new Map();
-    this.linearEnvelopeStates = new Map();
     this.logSpiralStates = new Map();
-    this.lorenzAttractorStates = new Map();
-    this.logisticMapStates = new Map();
-    this.henonMapStates = new Map();
-    this.chuaAttractorStates = new Map();
-    this.wirdoSpiralStates = new Map();
-    this.blubbStates = new Map();
-    this.mushroomStates = new Map();
-    this.boingStates = new Map();
-    this.torusStates = new Map();
-    this.keplerBouwkampStates = new Map();
-    this.nyquistShannonStates = new Map();
-    this.radarStates = new Map();
-    this.chordMemoryStates = new Map();
-    this.turingMachineStates = new Map();
-    this.changeDetectorStates = new Map();
-    this.yellowjacketFilterStates = new Map();
-    this.superloveFilterStates = new Map();
-    this.rsmetFilterStates = new Map();
-    this.chaoticPhaseLockingFilterStates = new Map();
-    this.dsfOscillatorStates = new Map();
-    this.robinSupersawStates = new Map();
-    this.flowerChildFilterStates = new Map();
-    this.resonatorFilterStates = new Map();
-    this.humanFilterStates = new Map();
-    this.pitchQuantizerStates = new Map();
-    this.surgeOscillatorStates = new Map();
-    this.noiseGeneratorStates = new Map();
     this.oscResetStates = new Map();
     this.graphLfoStates = new Map();
-    this.pluckEnvelopeStates = new Map();
     this.randomClockStates = new Map();
     for (const state of this.reverbEffectStates.values()) {
       this.destroySabrinaReverbState(state);
     }
-    this.reverbEffectStates = new Map();
     for (const state of this.pllStates.values()) {
       this.destroyPllState(state);
     }
-    this.pllStates = new Map();
     for (const state of this.helmholtzStates.values()) {
       this.destroyHelmholtzState(state);
     }
-    this.helmholtzStates = new Map();
-    this.randomWalkStates = new Map();
-    this.sampleHoldStates = new Map();
     this.samplePlaybackStates = new Map();
     this.samples = new Map();
-    this.slewLimiterStates = new Map();
     this.scopeBuffers = new Map();
     this.scopeCounter = 0;
     this.smoothers = new Map();
@@ -1665,8 +1195,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.triggerCounterStates = new Map();
     this.triggerDividerStates = new Map();
     this.triangleStates = new Map();
-    this.vactrolEnvelopeStates = new Map();
-    this.polyBlepStates = new Map();
     this.visualSinks = [];
     this.resetVisualControls();
   }
@@ -1756,96 +1284,8 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (node?.type === "logSpiral" && !this.logSpiralStates.has(id)) {
         this.logSpiralStates.set(id, this.createLogSpiralState());
       }
-      if (node?.type === "lorenzAttractor" && !this.lorenzAttractorStates.has(id)) {
-        this.lorenzAttractorStates.set(id, this.createLorenzAttractorState());
-      }
-      if (node?.type === "logisticMap" && !this.logisticMapStates.has(id)) {
-        this.logisticMapStates.set(id, this.createLogisticMapState());
-      }
-      if (node?.type === "henonMap" && !this.henonMapStates.has(id)) {
-        this.henonMapStates.set(id, this.createHenonMapState());
-      }
-      if (node?.type === "chuaAttractor" && !this.chuaAttractorStates.has(id)) {
-        this.chuaAttractorStates.set(id, this.createChuaAttractorState());
-      }
-      if (node?.type === "wirdoSpiral" && !this.wirdoSpiralStates.has(id)) {
-        this.wirdoSpiralStates.set(id, this.createWirdoSpiralState());
-      }
-      if (node?.type === "blubb" && !this.blubbStates.has(id)) {
-        this.blubbStates.set(id, this.createBlubbState());
-      }
-      if (node?.type === "mushroom" && !this.mushroomStates.has(id)) {
-        this.mushroomStates.set(id, this.createMushroomState());
-      }
-      if (node?.type === "boing" && !this.boingStates.has(id)) {
-        this.boingStates.set(id, this.createBoingState());
-      }
-      if (node?.type === "torus" && !this.torusStates.has(id)) {
-        this.torusStates.set(id, this.createTorusState());
-      }
-      if (node?.type === "keplerBouwkamp" && !this.keplerBouwkampStates.has(id)) {
-        this.keplerBouwkampStates.set(id, this.createKeplerBouwkampState());
-      }
-      if (node?.type === "nyquistShannon" && !this.nyquistShannonStates.has(id)) {
-        this.nyquistShannonStates.set(id, this.createNyquistShannonState());
-      }
-      if (node?.type === "radar" && !this.radarStates.has(id)) {
-        this.radarStates.set(id, this.createRadarState());
-      }
-      if (node?.type === "chordMemory" && !this.chordMemoryStates.has(id)) {
-        this.chordMemoryStates.set(id, this.createChordMemoryState());
-      }
-      if (node?.type === "turingMachine" && !this.turingMachineStates.has(id)) {
-        this.turingMachineStates.set(id, this.createTuringMachineState());
-      }
-      if (node?.type === "changeDetector" && !this.changeDetectorStates.has(id)) {
-        this.changeDetectorStates.set(id, this.createChangeDetectorState());
-      }
-      if (node?.type === "yellowjacketFilter" && !this.yellowjacketFilterStates.has(id)) {
-        this.yellowjacketFilterStates.set(id, this.createYellowjacketFilterState());
-      }
-      if (node?.type === "superloveFilter" && !this.superloveFilterStates.has(id)) {
-        this.superloveFilterStates.set(id, this.createSuperloveFilterState());
-      }
-      if (node?.type === "rsmetFilter" && !this.rsmetFilterStates.has(id)) {
-        this.rsmetFilterStates.set(id, this.createRsmetFilterState());
-      }
-      if (node?.type === "chaoticPhaseLockingFilter" && !this.chaoticPhaseLockingFilterStates.has(id)) {
-        this.chaoticPhaseLockingFilterStates.set(id, this.createChaoticPhaseLockingFilterState());
-      }
-      if (node?.type === "dsfOscillator" && !this.dsfOscillatorStates.has(id)) {
-        this.dsfOscillatorStates.set(id, this.createDsfOscillatorState());
-      }
-      if (node?.type === "robinSupersaw" && !this.robinSupersawStates.has(id)) {
-        this.robinSupersawStates.set(id, this.createRobinSupersawState());
-      }
-      if (node?.type === "flowerChildFilter" && !this.flowerChildFilterStates.has(id)) {
-        this.flowerChildFilterStates.set(id, this.createFlowerChildFilterState());
-      }
-      if (node?.type === "resonatorFilter" && !this.resonatorFilterStates.has(id)) {
-        this.resonatorFilterStates.set(id, this.createResonatorFilterState());
-      }
-      if (node?.type === "humanFilter" && !this.humanFilterStates.has(id)) {
-        this.humanFilterStates.set(id, this.createHumanFilterState());
-      }
-      if (node?.type === "pitchQuantizer" && !this.pitchQuantizerStates.has(id)) {
-        this.pitchQuantizerStates.set(id, this.createPitchQuantizerState());
-      }
-      if (node?.type === "surgeOscillator" && !this.surgeOscillatorStates.has(id)) {
-        this.surgeOscillatorStates.set(id, this.createSurgeOscillatorState());
-      }
-      if (node?.type === "passiveFilter" && !this.passiveFilterStates.has(id)) {
-        this.passiveFilterStates.set(id, this.createPassiveFilterState());
-      }
-      if (node?.type === "cookbookFilter" && !this.cookbookFilterStates.has(id)) {
-        this.cookbookFilterStates.set(id, this.createCookbookFilterState());
-      }
-      if (node?.type === "ladderFilter" && !this.ladderFilterStates.has(id)) {
-        this.ladderFilterStates.set(id, this.createLadderFilterState());
-      }
-      if (node?.type === "tb303Filter" && !this.tb303FilterStates.has(id)) {
-        this.tb303FilterStates.set(id, this.createTb303FilterState());
-      }
+      this.instantiateNativeStatefulModuleStateIfNeeded(this, node, id);
+      this.instantiateNativeStatefulModuleStateIfNeeded(this, node, id);
       if (node?.type === "clock" && !this.clockStates.has(id)) {
         this.clockStates.set(id, this.createClockState());
       }
@@ -1858,56 +1298,14 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (node?.type === "delayedTrigger" && !this.delayedTriggerStates.has(id)) {
         this.delayedTriggerStates.set(id, this.createDelayedTriggerState());
       }
-      if (node?.type === "delayEffect" && !this.delayEffectStates.has(id)) {
-        this.delayEffectStates.set(id, this.createDelayEffectState());
-      }
-      if (node?.type === "reverbEffect" && !this.reverbEffectStates.has(id)) {
-        this.reverbEffectStates.set(id, this.createSabrinaReverbState());
-      }
-      if (node?.type === "pll" && !this.pllStates.has(id)) {
-        this.pllStates.set(id, this.createPllState());
-      }
-      if (node?.type === "helmholtzPitch" && !this.helmholtzStates.has(id)) {
-        this.helmholtzStates.set(id, this.createHelmholtzState());
-      }
       if (node?.type === "randomClock" && !this.randomClockStates.has(id)) {
         this.randomClockStates.set(id, this.createRandomClockState());
-      }
-      if (node?.type === "sampleHold" && !this.sampleHoldStates.has(id)) {
-        this.sampleHoldStates.set(id, this.createSampleHoldState());
       }
       if ((node?.type === "samplePlayer" || node?.type === "sampleLooper" || node?.type === "audioPlayer") && !this.samplePlaybackStates.has(id)) {
         this.samplePlaybackStates.set(id, this.createSamplePlaybackState());
       }
       if ((node?.type === "nextPatch" || node?.type === "previousPatch") && !this.patchCommandStates.has(id)) {
         this.patchCommandStates.set(id, this.createPatchCommandState());
-      }
-      if (node?.type === "slewLimiter" && !this.slewLimiterStates.has(id)) {
-        this.slewLimiterStates.set(id, this.createSlewLimiterState());
-      }
-      if (node?.type === "expAdsr" && !this.expAdsrStates.has(id)) {
-        this.expAdsrStates.set(id, this.createExpAdsrState());
-      }
-      if (node?.type === "linearEnvelope" && !this.linearEnvelopeStates.has(id)) {
-        this.linearEnvelopeStates.set(id, this.createLinearEnvelopeState());
-      }
-      if (node?.type === "noiseGenerator" && !this.noiseGeneratorStates.has(id)) {
-        this.noiseGeneratorStates.set(id, this.createNoiseGeneratorState());
-      }
-      if (node?.type === "randomWalk" && !this.randomWalkStates.has(id)) {
-        this.randomWalkStates.set(id, this.createRandomWalkState());
-      }
-      if (node?.type === "fractalBrownianNoise" && !this.fractalBrownianNoiseStates.has(id)) {
-        this.fractalBrownianNoiseStates.set(id, this.createFractalBrownianNoiseState());
-      }
-      if (
-        node?.type === "flowerChildEnvelopeFollower" &&
-        !this.flowerChildEnvelopeFollowerStates.has(id)
-      ) {
-        this.flowerChildEnvelopeFollowerStates.set(id, this.createFlowerChildEnvelopeFollowerState());
-      }
-      if (node?.type === "pluckEnvelope" && !this.pluckEnvelopeStates.has(id)) {
-        this.pluckEnvelopeStates.set(id, this.createPluckEnvelopeState());
       }
       if (node?.type === "stepSequencer" && !this.stepSequencerStates.has(id)) {
         this.stepSequencerStates.set(id, this.createStepSequencerState());
@@ -1917,12 +1315,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       }
       if (node?.type === "triggerDivider" && !this.triggerDividerStates.has(id)) {
         this.triggerDividerStates.set(id, this.createTriggerDividerState());
-      }
-      if ((node?.type === "vactrolEnvelope" || node?.type === "vactrolEnvelopeC4") && !this.vactrolEnvelopeStates.has(id)) {
-        this.vactrolEnvelopeStates.set(id, this.createVactrolEnvelopeState());
-      }
-      if (node?.type === "polyBlep" && !this.polyBlepStates.has(id)) {
-        this.polyBlepStates.set(id, this.createPolyBlepState());
       }
       if (node?.type === "moduleGroup" && node.moduleGroupPlan && !this.moduleGroupRuntimes.has(id)) {
         this.moduleGroupRuntimes.set(id, this.createNestedRuntime(node.moduleGroupPlan));
@@ -2007,72 +1399,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         this.lorenzAttractorStates.delete(id);
       }
     }
-    for (const id of [...this.logisticMapStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyLogisticMapNativeState(this.logisticMapStates.get(id));
-        this.logisticMapStates.delete(id);
-      }
-    }
-    for (const id of [...this.henonMapStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyHenonMapNativeState(this.henonMapStates.get(id));
-        this.henonMapStates.delete(id);
-      }
-    }
-    for (const id of [...this.chuaAttractorStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyChuaAttractorNativeState(this.chuaAttractorStates.get(id));
-        this.chuaAttractorStates.delete(id);
-      }
-    }
-    for (const id of [...this.wirdoSpiralStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyWirdoSpiralNativeState(this.wirdoSpiralStates.get(id));
-        this.wirdoSpiralStates.delete(id);
-      }
-    }
-    for (const id of [...this.blubbStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyBlubbNativeState(this.blubbStates.get(id));
-        this.blubbStates.delete(id);
-      }
-    }
-    for (const id of [...this.mushroomStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyMushroomNativeState(this.mushroomStates.get(id));
-        this.mushroomStates.delete(id);
-      }
-    }
-    for (const id of [...this.boingStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyBoingNativeState(this.boingStates.get(id));
-        this.boingStates.delete(id);
-      }
-    }
-    for (const id of [...this.torusStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyTorusNativeState(this.torusStates.get(id));
-        this.torusStates.delete(id);
-      }
-    }
-    for (const id of [...this.keplerBouwkampStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyKeplerBouwkampNativeState(this.keplerBouwkampStates.get(id));
-        this.keplerBouwkampStates.delete(id);
-      }
-    }
-    for (const id of [...this.nyquistShannonStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyNyquistShannonNativeState(this.nyquistShannonStates.get(id));
-        this.nyquistShannonStates.delete(id);
-      }
-    }
-    for (const id of [...this.radarStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyRadarNativeState(this.radarStates.get(id));
-        this.radarStates.delete(id);
-      }
-    }
+    this.pruneRemovedNativeStatefulModuleStates(this, ids);
     for (const id of [...this.chordMemoryStates.keys()]) {
       if (!ids.has(id)) {
         this.chordMemoryStates.delete(id);
@@ -2083,81 +1410,9 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         this.turingMachineStates.delete(id);
       }
     }
-    for (const id of [...this.changeDetectorStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyChangeDetectorNativeState(this.changeDetectorStates.get(id));
-        this.changeDetectorStates.delete(id);
-      }
-    }
-    for (const id of [...this.yellowjacketFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyYellowjacketFilterNativeState(this.yellowjacketFilterStates.get(id));
-        this.yellowjacketFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.superloveFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroySuperloveFilterNativeState(this.superloveFilterStates.get(id));
-        this.superloveFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.rsmetFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyRsmetFilterNativeState(this.rsmetFilterStates.get(id));
-        this.rsmetFilterStates.delete(id);
-      }
-    }
     for (const id of [...this.chaoticPhaseLockingFilterStates.keys()]) {
       if (!ids.has(id)) {
         this.chaoticPhaseLockingFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.dsfOscillatorStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyDsfOscillatorNativeState(this.dsfOscillatorStates.get(id));
-        this.dsfOscillatorStates.delete(id);
-      }
-    }
-    for (const id of [...this.robinSupersawStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyRobinSupersawNativeState(this.robinSupersawStates.get(id));
-        this.robinSupersawStates.delete(id);
-      }
-    }
-    for (const id of [...this.flowerChildFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyFlowerChildFilterNativeState(this.flowerChildFilterStates.get(id));
-        this.flowerChildFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.resonatorFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyResonatorFilterNativeState(this.resonatorFilterStates.get(id));
-        this.resonatorFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.humanFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyHumanFilterNativeState(this.humanFilterStates.get(id));
-        this.humanFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.pitchQuantizerStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyPitchQuantizerNativeState(this.pitchQuantizerStates.get(id));
-        this.pitchQuantizerStates.delete(id);
-      }
-    }
-    for (const id of [...this.surgeOscillatorStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroySurgeOscillatorNativeState(this.surgeOscillatorStates.get(id));
-        this.surgeOscillatorStates.delete(id);
-      }
-    }
-    for (const id of [...this.passiveFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyPassiveFilterNativeState(this.passiveFilterStates.get(id));
-        this.passiveFilterStates.delete(id);
       }
     }
     for (const id of [...this.linearEnvelopeStates.keys()]) {
@@ -2178,18 +1433,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     for (const id of [...this.cookbookFilterStates.keys()]) {
       if (!ids.has(id)) {
         this.cookbookFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.ladderFilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyLadderFilterNativeState(this.ladderFilterStates.get(id));
-        this.ladderFilterStates.delete(id);
-      }
-    }
-    for (const id of [...this.tb303FilterStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyTb303FilterNativeState(this.tb303FilterStates.get(id));
-        this.tb303FilterStates.delete(id);
       }
     }
     for (const id of [...this.clockDividerStates.keys()]) {
@@ -2250,12 +1493,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         this.expAdsrStates.delete(id);
       }
     }
-    for (const id of [...this.noiseGeneratorStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyNoiseGeneratorNativeState(this.noiseGeneratorStates.get(id));
-        this.noiseGeneratorStates.delete(id);
-      }
-    }
     for (const id of [...this.randomWalkStates.keys()]) {
       if (!ids.has(id)) {
         this.randomWalkStates.delete(id);
@@ -2264,12 +1501,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     for (const id of [...this.randomClockStates.keys()]) {
       if (!ids.has(id)) {
         this.randomClockStates.delete(id);
-      }
-    }
-    for (const id of [...this.fractalBrownianNoiseStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyFbmNativeState(this.fractalBrownianNoiseStates.get(id));
-        this.fractalBrownianNoiseStates.delete(id);
       }
     }
     for (const id of [...this.flowerChildEnvelopeFollowerStates.keys()]) {
@@ -2295,18 +1526,6 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     for (const id of [...this.triggerDividerStates.keys()]) {
       if (!ids.has(id)) {
         this.triggerDividerStates.delete(id);
-      }
-    }
-    for (const id of [...this.vactrolEnvelopeStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyVactrolEnvelopeNativeState(this.vactrolEnvelopeStates.get(id));
-        this.vactrolEnvelopeStates.delete(id);
-      }
-    }
-    for (const id of [...this.polyBlepStates.keys()]) {
-      if (!ids.has(id)) {
-        this.destroyPolyBlepNativeState(this.polyBlepStates.get(id));
-        this.polyBlepStates.delete(id);
       }
     }
     for (const id of [...this.moduleGroupRuntimes.keys()]) {
@@ -4816,6 +4035,112 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     return this.dsfOscillatorSampleJs(state, options);
   }
 
+  // --- Quadrature Oscillator ---
+  // The coupled-form ("magic circle") two-multiply recurrence:
+  //   u[n] = u[n-1] - k*v[n-1]; v[n] = v[n-1] + k*u[n]; k = 2*sin(w/2).
+  // See native_modules/quadrature_oscillator/quadrature_oscillator.cpp for
+  // the full derivation. JS fallback mirrors that file exactly, including
+  // the periodic renormalization against float amplitude drift.
+
+  createQuadratureOscillatorState() {
+    return { u: 1, v: 0, lastReset: 0, nativeHandle: 0 };
+  }
+
+  destroyQuadratureOscillatorNativeState(state) {
+    if (state?.nativeHandle && this.nativeQuadratureOscillator?.soemdsp_quadrature_oscillator_destroy) {
+      this.nativeQuadratureOscillator.soemdsp_quadrature_oscillator_destroy(state.nativeHandle);
+      state.nativeHandle = 0;
+    }
+  }
+
+  quadratureOscillatorSampleJs(state, options = {}) {
+    const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
+    const frequencyHz = Number(options.frequencyHz) || 0;
+    const amplitude = Number(options.amplitude) || 0;
+    const resetGate = Number(options.resetGate) || 0;
+    const phaseCycles = Number(options.phaseCycles) || 0;
+
+    if (resetGate > 0.5 && state.lastReset <= 0) {
+      const angle = phaseCycles * Math.PI * 2;
+      state.u = Math.cos(angle);
+      state.v = Math.sin(angle);
+    }
+    state.lastReset = resetGate;
+
+    const w = (Math.PI * 2 * frequencyHz) / sampleRate;
+    const k = 2 * Math.sin(w * 0.5);
+
+    const nextU = state.u - k * state.v;
+    const nextV = state.v + k * nextU;
+
+    const r2 = nextU * nextU + nextV * nextV;
+    let correctedU = nextU;
+    let correctedV = nextV;
+    if (r2 > 1e-12 && (r2 < 0.999 || r2 > 1.001)) {
+      const scale = 1 / Math.sqrt(r2);
+      correctedU = nextU * scale;
+      correctedV = nextV * scale;
+    }
+
+    if (!Number.isFinite(correctedU) || !Number.isFinite(correctedV)) {
+      const angle = phaseCycles * Math.PI * 2;
+      correctedU = Math.cos(angle);
+      correctedV = Math.sin(angle);
+    }
+
+    state.u = correctedU;
+    state.v = correctedV;
+
+    return {
+      cos: this.clampValue(correctedU, -1.5, 1.5) * amplitude,
+      sin: this.clampValue(correctedV, -1.5, 1.5) * amplitude,
+    };
+  }
+
+  quadratureOscillatorSample(state, options = {}) {
+    if (this.nativeQuadratureOscillatorReady) {
+      try {
+        if (!state.nativeHandle) {
+          state.nativeHandle = this.nativeQuadratureOscillator.soemdsp_quadrature_oscillator_create();
+        }
+        if (state.nativeHandle) {
+          const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
+          const frequencyHz = Number(options.frequencyHz) || 0;
+          const amplitude = Number(options.amplitude) || 0;
+          const resetGate = Number(options.resetGate) || 0;
+          const phaseCycles = Number(options.phaseCycles) || 0;
+          this.nativeQuadratureOscillator.soemdsp_quadrature_oscillator_sample(
+            state.nativeHandle,
+            resetGate,
+            phaseCycles,
+            frequencyHz,
+            sampleRate,
+            amplitude,
+          );
+          return {
+            cos: this.safeFilterNumber(
+              this.nativeQuadratureOscillator.soemdsp_quadrature_oscillator_cos(state.nativeHandle),
+              null,
+            ),
+            sin: this.safeFilterNumber(
+              this.nativeQuadratureOscillator.soemdsp_quadrature_oscillator_sin(state.nativeHandle),
+              null,
+            ),
+          };
+        }
+      } catch (error) {
+        this.nativeQuadratureOscillatorReady = false;
+        this.port.postMessage({
+          type: "nativeModuleStatus",
+          name: "quadrature_oscillator",
+          status: "disabled",
+          message: String(error?.message || error || "native Quadrature Oscillator failed"),
+        });
+      }
+    }
+    return this.quadratureOscillatorSampleJs(state, options);
+  }
+
   // RobinSupersaw -- see native_modules/robin_supersaw/robin_supersaw.cpp
   // for the full derivation (Robin Schmidt's pitch dithering,
   // RobinSchmidt/RS-MET). This worklet's JS fallback is fully self-
@@ -4976,6 +4301,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     }
     return this.robinSupersawSampleJs(state, options);
   }
+
 
   // --- Flower Child Filter ---
 
@@ -5838,6 +5164,81 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // --- Registry-driven native module lifecycle (proof-of-concept batch) ---
+  // See nativeStatefulModuleRegistry above and
+  // docs/NATIVE_CPP_WASM_MODULE_GUIDE.md.
+
+  initNativeStatefulModuleMaps(target, { includeNativeFlags = false } = {}) {
+    for (const entry of nativeStatefulModuleRegistry) {
+      target[entry.stateMapKey] = new Map();
+      if (includeNativeFlags) {
+        target[entry.nativeFlagKey] = null;
+        target[entry.nativeReadyKey] = false;
+      }
+    }
+  }
+
+  destroyAllNativeStatefulModuleHandles(target) {
+    for (const entry of nativeStatefulModuleRegistry) {
+      if (!entry.destroyNativeState) continue;
+      const states = target[entry.stateMapKey];
+      if (!states) continue;
+      for (const state of states.values()) {
+        target[entry.destroyNativeState](state);
+      }
+    }
+  }
+
+  pruneRemovedNativeStatefulModuleStates(target, ids) {
+    for (const entry of nativeStatefulModuleRegistry) {
+      const states = target[entry.stateMapKey];
+      if (!states) continue;
+      for (const id of [...states.keys()]) {
+        if (!ids.has(id)) {
+          if (entry.destroyNativeState) {
+            target[entry.destroyNativeState](states.get(id));
+          }
+          states.delete(id);
+        }
+      }
+    }
+  }
+
+  instantiateNativeStatefulModuleStateIfNeeded(target, node, id) {
+    const entry = nativeStatefulModuleRegistry.find((candidate) => {
+      return Array.isArray(candidate.type) ? candidate.type.includes(node?.type) : candidate.type === node?.type;
+    });
+    if (!entry) return false;
+    const states = target[entry.stateMapKey];
+    if (!states || states.has(id)) return Boolean(entry);
+    states.set(id, target[entry.createState]());
+    return true;
+  }
+
+  handleNativeStatefulModuleLoad(name, targetType, exports) {
+    const entry = nativeStatefulModuleRegistry.find((candidate) => {
+      const typeMatches = Array.isArray(candidate.type) ? candidate.type.includes(targetType) : candidate.type === targetType;
+      return candidate.nativeName === name || typeMatches;
+    });
+    if (!entry) return false;
+    const states = this[entry.stateMapKey];
+    if (states && entry.destroyNativeState) {
+      for (const state of states.values()) {
+        this[entry.destroyNativeState](state);
+      }
+    }
+    this[entry.nativeFlagKey] = exports;
+    this[entry.nativeReadyKey] = entry.requiredExports.every(
+      (exportName) => Boolean(exports?.[exportName]),
+    );
+    this.port.postMessage({
+      type: "nativeModuleStatus",
+      name: entry.nativeName,
+      status: this[entry.nativeReadyKey] ? "ready" : "missing exports",
+    });
+    return true;
+  }
+
   safeFilterNumber(value, state) {
     const number = Number(value);
     const reason = this.badValueReason(number);
@@ -6121,71 +5522,31 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     runtime.engineSampleRate = this.engineSampleRate;
     runtime.hostSampleRate = this.hostSampleRate;
     runtime.oversamplingRatio = this.oversamplingRatio;
-    runtime.passiveFilterStates = new Map();
     runtime.clockDividerStates = new Map();
     runtime.clockStates = new Map();
     runtime.codeblockFunctions = new Map();
-    runtime.cookbookFilterStates = new Map();
     runtime.delayedTriggerStates = new Map();
-    runtime.delayEffectStates = new Map();
-    runtime.expAdsrStates = new Map();
-    runtime.fractalBrownianNoiseStates = new Map();
-    runtime.flowerChildEnvelopeFollowerStates = new Map();
     runtime.graphInputConnections = new Map();
-    runtime.ladderFilterStates = new Map();
-    runtime.flowerChildFilterStates = new Map();
-    runtime.yellowjacketFilterStates = new Map();
-    runtime.superloveFilterStates = new Map();
-    runtime.rsmetFilterStates = new Map();
-    runtime.chaoticPhaseLockingFilterStates = new Map();
-    runtime.resonatorFilterStates = new Map();
-    runtime.humanFilterStates = new Map();
-    runtime.linearEnvelopeStates = new Map();
-    runtime.noiseGeneratorStates = new Map();
+    this.initNativeStatefulModuleMaps(runtime);
     runtime.oscResetStates = new Map();
     runtime.graphLfoStates = new Map();
     runtime.outputNode = plan?.outputNode || "output";
     runtime.patchFingerprint = plan?.patchFingerprint || "";
     runtime.patchCommandStates = new Map();
     runtime.phases = new Map();
-    runtime.pluckEnvelopeStates = new Map();
     runtime.planSerial = 0;
     runtime.randomClockStates = new Map();
-    runtime.reverbEffectStates = new Map();
-    runtime.sampleHoldStates = new Map();
     runtime.samplePlaybackStates = new Map();
     runtime.samples = this.samples;
-    runtime.randomWalkStates = new Map();
     runtime.sessionId = this.sessionId;
     runtime.scopeBuffers = new Map();
     runtime.scopeCounter = 0;
-    runtime.slewLimiterStates = new Map();
     runtime.smoothers = new Map();
     runtime.spiralStates = new Map();
-    runtime.lorenzAttractorStates = new Map();
-    runtime.logisticMapStates = new Map();
-    runtime.henonMapStates = new Map();
-    runtime.chuaAttractorStates = new Map();
-    runtime.wirdoSpiralStates = new Map();
-    runtime.blubbStates = new Map();
-    runtime.mushroomStates = new Map();
-    runtime.boingStates = new Map();
-    runtime.torusStates = new Map();
-    runtime.keplerBouwkampStates = new Map();
-    runtime.nyquistShannonStates = new Map();
-    runtime.radarStates = new Map();
-    runtime.chordMemoryStates = new Map();
-    runtime.turingMachineStates = new Map();
-    runtime.pitchQuantizerStates = new Map();
-    runtime.surgeOscillatorStates = new Map();
-    runtime.dsfOscillatorStates = new Map();
-    runtime.robinSupersawStates = new Map();
     runtime.stepSequencerStates = new Map();
     runtime.triggerCounterStates = new Map();
     runtime.triggerDividerStates = new Map();
     runtime.triangleStates = new Map();
-    runtime.vactrolEnvelopeStates = new Map();
-    runtime.polyBlepStates = new Map();
     runtime.resetVisualControls();
     runtime.setNestedPlan(plan);
     return runtime;
@@ -6223,63 +5584,20 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (node?.type === "spiral") this.spiralStates.set(id, this.createSpiralState());
       if (node?.type === "fractalSpiral") this.fractalSpiralStates.set(id, this.createFractalSpiralState());
       if (node?.type === "logSpiral") this.logSpiralStates.set(id, this.createLogSpiralState());
-      if (node?.type === "lorenzAttractor") this.lorenzAttractorStates.set(id, this.createLorenzAttractorState());
-      if (node?.type === "logisticMap") this.logisticMapStates.set(id, this.createLogisticMapState());
-      if (node?.type === "henonMap") this.henonMapStates.set(id, this.createHenonMapState());
-      if (node?.type === "chuaAttractor") this.chuaAttractorStates.set(id, this.createChuaAttractorState());
-      if (node?.type === "wirdoSpiral") this.wirdoSpiralStates.set(id, this.createWirdoSpiralState());
-      if (node?.type === "blubb") this.blubbStates.set(id, this.createBlubbState());
-      if (node?.type === "mushroom") this.mushroomStates.set(id, this.createMushroomState());
-      if (node?.type === "boing") this.boingStates.set(id, this.createBoingState());
-      if (node?.type === "torus") this.torusStates.set(id, this.createTorusState());
-      if (node?.type === "keplerBouwkamp") this.keplerBouwkampStates.set(id, this.createKeplerBouwkampState());
-      if (node?.type === "nyquistShannon") this.nyquistShannonStates.set(id, this.createNyquistShannonState());
-      if (node?.type === "radar") this.radarStates.set(id, this.createRadarState());
-      if (node?.type === "chordMemory") this.chordMemoryStates.set(id, this.createChordMemoryState());
-      if (node?.type === "turingMachine") this.turingMachineStates.set(id, this.createTuringMachineState());
-      if (node?.type === "changeDetector") this.changeDetectorStates.set(id, this.createChangeDetectorState());
-      if (node?.type === "yellowjacketFilter") this.yellowjacketFilterStates.set(id, this.createYellowjacketFilterState());
-      if (node?.type === "superloveFilter") this.superloveFilterStates.set(id, this.createSuperloveFilterState());
-      if (node?.type === "rsmetFilter") this.rsmetFilterStates.set(id, this.createRsmetFilterState());
-      if (node?.type === "chaoticPhaseLockingFilter") this.chaoticPhaseLockingFilterStates.set(id, this.createChaoticPhaseLockingFilterState());
-      if (node?.type === "dsfOscillator") this.dsfOscillatorStates.set(id, this.createDsfOscillatorState());
-      if (node?.type === "robinSupersaw") this.robinSupersawStates.set(id, this.createRobinSupersawState());
-      if (node?.type === "flowerChildFilter") this.flowerChildFilterStates.set(id, this.createFlowerChildFilterState());
-      if (node?.type === "resonatorFilter") this.resonatorFilterStates.set(id, this.createResonatorFilterState());
-      if (node?.type === "humanFilter") this.humanFilterStates.set(id, this.createHumanFilterState());
-      if (node?.type === "pitchQuantizer") this.pitchQuantizerStates.set(id, this.createPitchQuantizerState());
-      if (node?.type === "surgeOscillator") this.surgeOscillatorStates.set(id, this.createSurgeOscillatorState());
-      if (node?.type === "passiveFilter") this.passiveFilterStates.set(id, this.createPassiveFilterState());
-      if (node?.type === "cookbookFilter") this.cookbookFilterStates.set(id, this.createCookbookFilterState());
-      if (node?.type === "ladderFilter") this.ladderFilterStates.set(id, this.createLadderFilterState());
-      if (node?.type === "tb303Filter") this.tb303FilterStates.set(id, this.createTb303FilterState());
+      this.instantiateNativeStatefulModuleStateIfNeeded(this, node, id);
+      this.instantiateNativeStatefulModuleStateIfNeeded(this, node, id);
       if (node?.type === "clock") this.clockStates.set(id, this.createClockState());
       if (node?.type === "graph" || node?.type === "graph2") this.graphLfoStates.set(id, this.createGraphLfoState());
       if (node?.type === "clockDivider") this.clockDividerStates.set(id, this.createTriggerDividerState());
       if (node?.type === "delayedTrigger") this.delayedTriggerStates.set(id, this.createDelayedTriggerState());
-      if (node?.type === "delayEffect") this.delayEffectStates.set(id, this.createDelayEffectState());
-      if (node?.type === "reverbEffect") this.reverbEffectStates.set(id, this.createSabrinaReverbState());
-      if (node?.type === "pll") this.pllStates.set(id, this.createPllState());
-      if (node?.type === "helmholtzPitch") this.helmholtzStates.set(id, this.createHelmholtzState());
       if (node?.type === "randomClock") this.randomClockStates.set(id, this.createRandomClockState());
-      if (node?.type === "sampleHold") this.sampleHoldStates.set(id, this.createSampleHoldState());
       if (node?.type === "samplePlayer" || node?.type === "sampleLooper" || node?.type === "audioPlayer") {
         this.samplePlaybackStates.set(id, this.createSamplePlaybackState());
       }
       if (node?.type === "nextPatch" || node?.type === "previousPatch") this.patchCommandStates.set(id, this.createPatchCommandState());
-      if (node?.type === "slewLimiter") this.slewLimiterStates.set(id, this.createSlewLimiterState());
-      if (node?.type === "expAdsr") this.expAdsrStates.set(id, this.createExpAdsrState());
-      if (node?.type === "linearEnvelope") this.linearEnvelopeStates.set(id, this.createLinearEnvelopeState());
-      if (node?.type === "noiseGenerator") this.noiseGeneratorStates.set(id, this.createNoiseGeneratorState());
-      if (node?.type === "randomWalk") this.randomWalkStates.set(id, this.createRandomWalkState());
-      if (node?.type === "fractalBrownianNoise") this.fractalBrownianNoiseStates.set(id, this.createFractalBrownianNoiseState());
-      if (node?.type === "flowerChildEnvelopeFollower") this.flowerChildEnvelopeFollowerStates.set(id, this.createFlowerChildEnvelopeFollowerState());
-      if (node?.type === "pluckEnvelope") this.pluckEnvelopeStates.set(id, this.createPluckEnvelopeState());
       if (node?.type === "stepSequencer") this.stepSequencerStates.set(id, this.createStepSequencerState());
       if (node?.type === "triggerCounter") this.triggerCounterStates.set(id, this.createTriggerCounterState());
       if (node?.type === "triggerDivider") this.triggerDividerStates.set(id, this.createTriggerDividerState());
-      if (node?.type === "vactrolEnvelope" || node?.type === "vactrolEnvelopeC4") this.vactrolEnvelopeStates.set(id, this.createVactrolEnvelopeState());
-      if (node?.type === "polyBlep") this.polyBlepStates.set(id, this.createPolyBlepState());
       if (node?.type === "moduleGroup" && node.moduleGroupPlan) {
         this.moduleGroupRuntimes.set(id, this.createNestedRuntime(node.moduleGroupPlan));
       }
@@ -12262,6 +11580,28 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
           pulseWidth: read("pulseWidth", 0.5),
           blend: read("blend", 0.5),
           level: read("level", 1),
+        });
+      } else if (node?.type === "quadratureOscillator") {
+        const state = this.quadratureOscillatorStates.get(nodeId) || this.createQuadratureOscillatorState();
+        this.quadratureOscillatorStates.set(nodeId, state);
+        const read = (key, fallback) => this.readEffectiveParameter(node, key, fallback, frame, frames, frameValues);
+        const resetGate = this.safeFilterNumber(mixInput(nodeId, "Reset"), null);
+        const baseFrequency = read("freq", 440);
+        const freqInput = this.safeFilterNumber(mixInput(nodeId, "Freq"), null);
+        const pitchInput = this.clampValue(
+          this.safeFilterNumber(mixInput(nodeId, "0.1V/Oct"), null),
+          -1,
+          1,
+        );
+        const pitchedFrequency = Math.max(0, (baseFrequency + freqInput) * (2 ** (pitchInput / 0.1)));
+        const ampInput = this.safeFilterNumber(mixInput(nodeId, "Amplitude"), null);
+        const amplitude = Math.max(0, read("amp", 1) + ampInput);
+        value = this.quadratureOscillatorSample(state, {
+          resetGate,
+          phaseCycles: read("phase", 0),
+          frequencyHz: pitchedFrequency,
+          sampleRate: this.engineSampleRate || sampleRate,
+          amplitude,
         });
       } else if (node?.type === "robinSupersaw") {
         const state = this.robinSupersawStates.get(nodeId) || this.createRobinSupersawState();

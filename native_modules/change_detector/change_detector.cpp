@@ -2,6 +2,8 @@
 // soemdsp-native-label: Change Detector
 // soemdsp-native-target: changeDetector
 // soemdsp-native-kind: utility
+// soemdsp-native-path: Utility/Edge Detection/Change Detector
+// soemdsp-native-construction: false
 //
 // Compares each incoming sample to the previous one and fires a single
 // sample of amplitude 1.0 on whichever output matches what happened:

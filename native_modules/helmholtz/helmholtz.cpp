@@ -2,6 +2,8 @@
 // soemdsp-native-label: Helmholtz Pitch
 // soemdsp-native-target: helmholtzPitch
 // soemdsp-native-kind: analysis
+// soemdsp-native-path: Analysis/Pitch Detection/Helmholtz Pitch
+// soemdsp-native-construction: false
 
 // Monophonic pitch detector using the McLeod Pitch Method: NSDF over a
 // sliding window, peak picking, and parabolic interpolation.

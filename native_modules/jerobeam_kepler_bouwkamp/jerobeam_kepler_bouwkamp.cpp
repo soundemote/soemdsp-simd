@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Kepler-Bouwkamp
 // soemdsp-native-target: keplerBouwkamp
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Orbital Mechanics/Jerobeam Kepler-Bouwkamp
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamKeplerBouwkamp.{h,cpp}
 // (Jerobeam Fenderson's "Kepler-Bouwkamp" Gen~ patch): a nested-polygon

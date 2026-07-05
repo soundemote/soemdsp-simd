@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Boing
 // soemdsp-native-target: boing
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Spring Bounce/Jerobeam Boing
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamBoing.{h,cpp}
 // (Jerobeam Fenderson's "Boing" Gen~ patch). A phasor-driven sphere shape

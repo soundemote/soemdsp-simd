@@ -2,6 +2,8 @@
 // soemdsp-native-label: Cookbook Filter
 // soemdsp-native-target: cookbookFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Biquad/Cookbook Filter
+// soemdsp-native-construction: false
 
 // RBJ "Audio EQ Cookbook" biquad, cascaded up to 5 stages. Modes: 0=Off,
 // 1=LP, 2=HP, 3=BP(csg), 4=BP(peak), 5=Notch, 6=APF, 7=PeakingEQ,

@@ -24,6 +24,41 @@ browser.
 
 ---
 
+## 🌀 Cheat sheet
+
+The physics of this universe, in one page.
+
+**How you end aliasing:**
+
+```
+simulation_speed_limit = ½ × s × r
+```
+
+`s` = sample rate, `r` = oversampling ratio. Nothing in this engine is
+allowed to move faster than half of that. Anti-aliasing isn't a filter you
+bolt on afterward — it's obeying the speed limit in the first place.
+
+- **Sinewave** is described as: that sinewave that happens over time — not a
+  table, not a call to `sin()`, just the very simple equation that happens
+  to produce one: `u[n] = u[n-1] - k*v[n-1]; v[n] = v[n-1] + k*u[n]`. See
+  `native_modules/quadrature_oscillator`.
+- **Filter** is described as: our magnificent RSMET passive — a ladder run
+  through a soft clipper and a pinch of noise, cutoff and resonance eased
+  through exponential curves instead of linear ones, because that's how the
+  real circuit actually leans into its knobs. See
+  `native_modules/rsmet_filter`.
+- **Oscillator** is described as: a sinewave (or any other shape) that
+  agrees to repeat — take the simple equation above, wrap its phase back to
+  zero, and it stops being a single event and becomes a pitch.
+- **Envelope** is described as: a shape that happens once — the same
+  "just an equation over time" idea as a sinewave, except it isn't asked to
+  loop. It rises, it falls, then it's done.
+- **etc.** is described as: whatever else you can describe as a function of
+  time — every module in this repo is one of these four ideas, or a mix of
+  them, wearing a different name.
+
+---
+
 ## 🚀 Quick start
 
 ```powershell
@@ -180,6 +215,8 @@ use requires a separate written commercial license from Soundemote. See
 ## 📚 Guides
 
 - [`docs/ADDING_HARDCODED_SANDBOX_MODULE.md`](docs/ADDING_HARDCODED_SANDBOX_MODULE.md)
+- [`docs/NATIVE_CPP_WASM_MODULE_GUIDE.md`](docs/NATIVE_CPP_WASM_MODULE_GUIDE.md)
+- [`docs/NATIVE_MODULE_PLACEMENT_POLICY.md`](docs/NATIVE_MODULE_PLACEMENT_POLICY.md)
 - [`docs/OSC_MODULE_NON_UI_REFERENCE.md`](docs/OSC_MODULE_NON_UI_REFERENCE.md)
 - [`docs/WEBUI_CLAP_HOST_PLAN.md`](docs/WEBUI_CLAP_HOST_PLAN.md)
 - [`tools/webui-clap-host/README.md`](tools/webui-clap-host/README.md)

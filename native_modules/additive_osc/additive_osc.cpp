@@ -2,6 +2,8 @@
 // soemdsp-native-label: Additive Osc
 // soemdsp-native-target: additiveOsc
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Additive/Additive Osc
+// soemdsp-native-construction: false
 
 // Stateless -- mirrors additiveOscillatorSample in
 // public/node-live-audio-worklet.js for the common case where no Damping

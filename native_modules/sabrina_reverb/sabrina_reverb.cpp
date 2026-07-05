@@ -2,6 +2,8 @@
 // soemdsp-native-label: Sabrina Reverb
 // soemdsp-native-target: reverbEffect
 // soemdsp-native-kind: effect
+// soemdsp-native-path: Effect/Reverb/Sabrina Reverb
+// soemdsp-native-construction: false
 
 #include <wasm_simd128.h>
 

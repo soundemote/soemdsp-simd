@@ -2,6 +2,8 @@
 // soemdsp-native-label: TB-303 Filter
 // soemdsp-native-target: tb303Filter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Analog Emulation/TB-303 Filter
+// soemdsp-native-construction: false
 
 // Based on Robin Schmidt's TeeBeeFilter (RS-MET / Open303).
 // Key differences from a plain Moog ladder:

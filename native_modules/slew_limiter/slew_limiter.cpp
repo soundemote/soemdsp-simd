@@ -2,6 +2,8 @@
 // soemdsp-native-label: Slew Limiter
 // soemdsp-native-target: slewLimiter
 // soemdsp-native-kind: utility
+// soemdsp-native-path: Utility/Slew Limiting/Slew Limiter
+// soemdsp-native-construction: false
 
 namespace {
 

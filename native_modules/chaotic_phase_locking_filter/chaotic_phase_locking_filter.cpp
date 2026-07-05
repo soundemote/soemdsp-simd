@@ -2,6 +2,8 @@
 // soemdsp-native-label: Chaotic Phase Locking Filter
 // soemdsp-native-target: chaoticPhaseLockingFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Chaotic/Chaotic Phase Locking Filter
+// soemdsp-native-construction: false
 //
 // A feedback ellipse-waveshaper resonator through a 12dB lowpass tap and
 // a 6dB DC-blocking highpass tap. Ported from the original

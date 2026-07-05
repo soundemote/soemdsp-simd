@@ -2,6 +2,8 @@
 // soemdsp-native-label: Chua Attractor
 // soemdsp-native-target: chuaAttractor
 // soemdsp-native-kind: chaos
+// soemdsp-native-path: Chaos/Attractor/Chua Attractor
+// soemdsp-native-construction: false
 
 namespace {
 

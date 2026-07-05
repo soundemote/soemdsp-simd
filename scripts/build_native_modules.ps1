@@ -872,3 +872,21 @@ if (!(Test-Path -LiteralPath $clang)) {
   -o "$root\native_modules\jerobeam_radar\jerobeam_radar.wasm" `
   "$root\native_modules\jerobeam_radar\jerobeam_radar.cpp"
 
+& $clang `
+  --target=wasm32 `
+  -O3 `
+  -nostdlib `
+  -fno-exceptions `
+  -fno-rtti `
+  "-Wl,--no-entry" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_create" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_destroy" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_reset" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_sample" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_sin" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_cos" `
+  "-Wl,--export=soemdsp_quadrature_oscillator_version" `
+  "-Wl,--export-memory" `
+  -o "$root\native_modules\quadrature_oscillator\quadrature_oscillator.wasm" `
+  "$root\native_modules\quadrature_oscillator\quadrature_oscillator.cpp"
+

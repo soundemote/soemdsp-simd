@@ -1,6 +1,68 @@
 const nodeUiDevDefaultSettingsUrl = "./public/presets/useruisettings.json";
 const nodeUiDevDefaultSettingsStorageKey = "soemdsp-sandbox.userUiSettings.startup.v12";
 
+// Per-module-type saved parameter defaults ("set as default" from the
+// Module Actions window) -- isolated to a single module type, independent
+// of any specific patch. { [type]: { [paramKey]: number } }
+const nodeGraphModuleParameterDefaultsStorageKey = "soemdsp-sandbox.moduleParameterDefaults.v1";
+
+function loadNodeGraphModuleParameterDefaultsMap() {
+  try {
+    const raw = window.localStorage?.getItem(nodeGraphModuleParameterDefaultsStorageKey);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveNodeGraphModuleParameterDefaultsMap(map) {
+  try {
+    window.localStorage?.setItem(nodeGraphModuleParameterDefaultsStorageKey, JSON.stringify(map || {}));
+  } catch (error) {
+    // Storage unavailable (private browsing, quota, etc.) -- nothing to do.
+  }
+}
+
+function nodeGraphModuleParameterDefaultsForType(type) {
+  const map = loadNodeGraphModuleParameterDefaultsMap();
+  const entry = map[String(type || "")];
+  return entry && typeof entry === "object" ? entry : null;
+}
+
+function nodeGraphModuleHasParameterDefaultsOverride(type) {
+  return Boolean(nodeGraphModuleParameterDefaultsForType(type));
+}
+
+function setNodeGraphModuleParameterDefaultsForType(type, params) {
+  const key = String(type || "");
+  if (!key) {
+    return;
+  }
+  const map = loadNodeGraphModuleParameterDefaultsMap();
+  const values = {};
+  for (const [paramKey, value] of Object.entries(params || {})) {
+    const number = Number(value);
+    if (Number.isFinite(number)) {
+      values[paramKey] = number;
+    }
+  }
+  map[key] = values;
+  saveNodeGraphModuleParameterDefaultsMap(map);
+}
+
+function clearNodeGraphModuleParameterDefaultsForType(type) {
+  const key = String(type || "");
+  if (!key) {
+    return;
+  }
+  const map = loadNodeGraphModuleParameterDefaultsMap();
+  if (Object.hasOwn(map, key)) {
+    delete map[key];
+    saveNodeGraphModuleParameterDefaultsMap(map);
+  }
+}
+
 const nodeGraphWorkspaceWindowStateKeys = Object.freeze([
   "commandCenter",
   "moduleActions",

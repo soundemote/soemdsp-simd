@@ -1,3 +1,13 @@
+@font-face {
+  font-family: "DSEG7 Classic";
+  src:
+    url("./fonts/DSEG7-Classic/DSEG7Classic-Bold.woff2") format("woff2"),
+    url("./fonts/DSEG7-Classic/DSEG7Classic-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --bg: #000000;
@@ -11088,6 +11098,110 @@ audio {
 
 .node-graph-workspace.show-slider-amount .node-slider-amount-fill {
   visibility: visible;
+}
+
+/* Number-only readouts (e.g. Sabrina Reverb's Seed) can't be dragged and
+   show no name label -- a row of square buttons (-, number, +, dice)
+   replaces the usual label/fill/handle slider affordances entirely. */
+.node-slider-readout.number-only::before {
+  content: none;
+}
+
+.node-graph-workspace.show-slider-amount .node-slider-readout.number-only .node-slider-amount-fill {
+  visibility: hidden;
+}
+
+.node-slider-readout.number-only {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  column-gap: 3px;
+  cursor: default;
+  background: rgba(2, 5, 8, 0.82);
+}
+
+.node-slider-readout.number-only .node-slider-readout-label,
+.node-slider-readout.number-only .node-slider-readout-unit,
+.node-slider-readout.number-only .node-slider-readout-portal {
+  display: none;
+}
+
+.node-slider-readout.number-only .node-slider-readout-value {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  padding: 0 4px;
+  font-family: "DSEG7 Classic", var(--mono);
+  font-size: 1.3em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
+}
+
+.node-slider-readout-step,
+.node-slider-readout-dice {
+  display: none;
+  box-sizing: border-box;
+  position: static;
+  grid-row: 1;
+  block-size: 100%;
+  aspect-ratio: 1 / 1;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(127, 199, 217, 0.28);
+  border-radius: 4px;
+  background: rgba(127, 199, 217, 0.08);
+  color: rgba(243, 241, 236, 0.86);
+  font: 800 1.1em/1 var(--mono);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.node-slider-readout.number-only .node-slider-readout-step,
+.node-slider-readout.number-only .node-slider-readout-dice {
+  display: flex;
+}
+
+.node-slider-readout-step-minus {
+  grid-column: 1;
+}
+
+.node-slider-readout-step-minus::before {
+  content: "\2212";
+}
+
+.node-slider-readout-step-plus {
+  grid-column: 2;
+}
+
+.node-slider-readout-step-plus::before {
+  content: "+";
+}
+
+.node-slider-readout-dice {
+  grid-column: 4;
+  font-size: 1em;
+}
+
+.node-slider-readout-dice::before {
+  content: "\1F3B2";
+}
+
+.node-slider-readout-step:hover,
+.node-slider-readout-dice:hover {
+  border-color: rgba(127, 199, 217, 0.62);
+  background: rgba(127, 199, 217, 0.18);
+  color: var(--text);
+}
+
+.node-slider-readout-step:active,
+.node-slider-readout-dice:active {
+  border-color: rgba(226, 168, 109, 0.72);
+  background: rgba(226, 168, 109, 0.22);
+  color: var(--text);
 }
 
 .node-slider-readout-portal {

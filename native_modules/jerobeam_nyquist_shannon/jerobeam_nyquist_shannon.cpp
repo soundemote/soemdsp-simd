@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Nyquist-Shannon
 // soemdsp-native-target: nyquistShannon
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Sampling Theory/Jerobeam Nyquist-Shannon
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamNyquistShannon.{h,cpp}
 // (Jerobeam Fenderson's "Nyquist-Shannon" Gen~ patch): a sample/rate

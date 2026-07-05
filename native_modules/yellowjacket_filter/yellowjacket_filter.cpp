@@ -2,6 +2,8 @@
 // soemdsp-native-label: Yellowjacket Filter
 // soemdsp-native-target: yellowjacketFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Analog Emulation/Yellowjacket Filter
+// soemdsp-native-construction: false
 //
 // A feedback-modulated ellipse-oscillator filter, one-pole (6dB/octave)
 // output stage, with a resonance-vs-frequency shaping curve controlling

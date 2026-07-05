@@ -16379,36 +16379,22 @@ def require_node_graph_mvp_contract() -> None:
         "this.applyParameterModulation(base, modulationSignal, metadata)",
         "this.nodeOutputs = new Map()",
         "this.noiseSeedKeys = new Map()",
-        "this.passiveFilterStates = new Map()",
-        "this.cookbookFilterStates = new Map()",
-        "this.ladderFilterStates = new Map()",
         "this.clockDividerStates = new Map()",
         "this.clockStates = new Map()",
         "this.delayedTriggerStates = new Map()",
         "this.patchCommandStates = new Map()",
-        "this.expAdsrStates = new Map()",
-        "this.fractalBrownianNoiseStates = new Map()",
-        "this.flowerChildEnvelopeFollowerStates = new Map()",
-        "this.linearEnvelopeStates = new Map()",
-        "this.noiseGeneratorStates = new Map()",
         "this.oscResetStates = new Map()",
         "this.graphLfoStates = new Map()",
         "this.oscillatorLastPhaseIncrements = new Map()",
         "this.oscillatorStoppedSamples = new Map()",
         "this.randomClockStates = new Map()",
-        "this.randomWalkStates = new Map()",
-        "this.sampleHoldStates = new Map()",
-        "this.slewLimiterStates = new Map()",
         "this.stepSequencerStates = new Map()",
         "this.triggerCounterStates = new Map()",
         "this.triggerDividerStates = new Map()",
-        "this.vactrolEnvelopeStates = new Map()",
         "createVisualControlState()",
         "resetVisualControls()",
         "this.resetVisualControls()",
-        "this.pluckEnvelopeStates = new Map()",
         "this.spiralStates = new Map()",
-        "this.lorenzAttractorStates = new Map()",
         "createLorenzAttractorState()",
         "lorenzAttractorSample(options = {})",
         "const dt = (0.75 * speed) / sampleRateValue;",
@@ -17014,6 +17000,14 @@ def require_native_module_contract(base_url: str) -> None:
         ],
         "cookbook_filter": ["soemdsp_cookbook_filter_create", "soemdsp_cookbook_filter_destroy", "soemdsp_cookbook_filter_sample"],
         "sine_wavetable": ["soemdsp_sine_wavetable_sin", "soemdsp_sine_wavetable_cos"],
+        "quadrature_oscillator": [
+            "soemdsp_quadrature_oscillator_create",
+            "soemdsp_quadrature_oscillator_destroy",
+            "soemdsp_quadrature_oscillator_reset",
+            "soemdsp_quadrature_oscillator_sample",
+            "soemdsp_quadrature_oscillator_sin",
+            "soemdsp_quadrature_oscillator_cos",
+        ],
         "additive_osc": ["soemdsp_additive_osc_sample"],
         "delay_effect": [
             "soemdsp_delay_effect_create",
@@ -17212,12 +17206,12 @@ def require_native_module_contract(base_url: str) -> None:
         "native Soft Clipper build exports should be registered",
     )
     require(
-        'name === "ladder_filter" || targetType === "ladderFilter"' in worklet_source
-        and "this.nativeLadderFilter?.soemdsp_ladder_filter_create" in worklet_source
-        and "this.nativeLadderFilter?.soemdsp_ladder_filter_sample" in worklet_source
+        'nativeName: "ladder_filter"' in worklet_source
+        and "soemdsp_ladder_filter_create" in worklet_source
+        and "soemdsp_ladder_filter_sample" in worklet_source
         and "native Ladder Filter failed" in worklet_source
         and "this.safeFilterNumber(\n            this.nativeLadderFilter.soemdsp_ladder_filter_sample(" in worklet_source,
-        "native Ladder Filter should be worklet-backed and guarded against native failures",
+        "native Ladder Filter should be worklet-backed (registry-driven load) and guarded against native failures",
     )
 
     response = request(f"{base_url}/api/native-modules")

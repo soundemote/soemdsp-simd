@@ -2,6 +2,8 @@
 // soemdsp-native-label: Ellipsoid
 // soemdsp-native-target: ellipsoid
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Geometric/Ellipsoid
+// soemdsp-native-construction: false
 
 namespace {
 constexpr double kPi = 3.1415926535897932384626433832795;

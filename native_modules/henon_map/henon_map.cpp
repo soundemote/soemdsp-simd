@@ -2,6 +2,8 @@
 // soemdsp-native-label: Henon Map
 // soemdsp-native-target: henonMap
 // soemdsp-native-kind: chaos
+// soemdsp-native-path: Chaos/Map/Henon Map
+// soemdsp-native-construction: false
 
 namespace {
 

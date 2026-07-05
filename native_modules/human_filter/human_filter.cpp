@@ -2,6 +2,8 @@
 // soemdsp-native-label: Human Filter
 // soemdsp-native-target: humanFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Formant/Human Filter
+// soemdsp-native-construction: false
 //
 // A dual-phasor feedback network (two sine oscillators, self- and
 // cross-modulating) shaped by a bell/peak filter in the feedback path and

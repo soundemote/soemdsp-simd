@@ -2,6 +2,8 @@
 // soemdsp-native-label: SinCos
 // soemdsp-native-target: sineWavetable
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Wavetable/SinCos
+// soemdsp-native-construction: false
 
 // Stateless -- the JS caller owns the phase accumulator (this.phases, shared
 // with the PolyBLEP-family oscillators) and just asks for sin/cos at a given

@@ -34,8 +34,16 @@ function normalizeNodeGraphMetadataSmoothingSeconds(value) {
 }
 
 function nodeGraphDefaultParamsForType(type) {
+  const overrides = typeof nodeGraphModuleParameterDefaultsForType === "function"
+    ? nodeGraphModuleParameterDefaultsForType(type)
+    : null;
   const params = {};
   for (const parameter of nodeGraphModuleDefinitions[type]?.parameters || []) {
+    const overrideValue = overrides ? Number(overrides[parameter.key]) : NaN;
+    if (Number.isFinite(overrideValue)) {
+      params[parameter.key] = overrideValue;
+      continue;
+    }
     const value = Number(parameter.defaultValue);
     params[parameter.key] = Number.isFinite(value) ? value : 0;
   }

@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Blubb
 // soemdsp-native-target: blubb
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Bubble Physics/Jerobeam Blubb
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamBlubb.{h,cpp}
 // (Jerobeam Fenderson's "Blubb" Gen~ patch). The reference getSampleFrame()

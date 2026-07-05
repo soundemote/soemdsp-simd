@@ -2,6 +2,8 @@
 // soemdsp-native-label: RobinSupersaw
 // soemdsp-native-target: robinSupersaw
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Supersaw/RobinSupersaw
+// soemdsp-native-construction: false
 
 // RobinSupersaw -- a proof-of-concept supersaw built on Robin Schmidt's
 // pitch dithering technique (RobinSchmidt/RS-MET). See this repo's

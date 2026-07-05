@@ -2,6 +2,8 @@
 // soemdsp-native-label: Pitch Quantizer
 // soemdsp-native-target: pitchQuantizer
 // soemdsp-native-kind: pitch
+// soemdsp-native-path: Pitch/Quantizer/Pitch Quantizer
+// soemdsp-native-construction: false
 
 namespace {
 

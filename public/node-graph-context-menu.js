@@ -636,6 +636,7 @@ const nodeGraphModuleActionControlIds = [
   "nodeSceneTextBoxHorizontalAlignControls",
   "nodeSceneTextBoxVerticalAlignControls",
   "nodeSceneToggleModuleEnabled",
+  "nodeSceneSetModuleDefault",
   "nodeSceneOpenNativeCode",
   "nodeSceneDeleteModule",
 ];
@@ -882,6 +883,7 @@ function configureNodeSceneContextMenu(mode) {
   const graphRemoveNode = document.getElementById("nodeSceneGraphRemoveNode");
   const toggleButtonsButton = document.getElementById("nodeSceneToggleButtons");
   const toggleModuleEnabledButton = document.getElementById("nodeSceneToggleModuleEnabled");
+  const setModuleDefaultButton = document.getElementById("nodeSceneSetModuleDefault");
   const nativeCodeButton = document.getElementById("nodeSceneOpenNativeCode");
   const toggleOscilloscopeButton = document.getElementById("nodeSceneToggleOscilloscope");
   const toggleInterfaceControlsButton = document.getElementById("nodeSceneToggleInterfaceControls");
@@ -1029,6 +1031,10 @@ function configureNodeSceneContextMenu(mode) {
   codeblockControls.hidden = !(moduleMode && !multiModuleMode && targetNode?.type === "codeblock");
   graphControls.hidden = !(moduleMode && !multiModuleMode && targetIsGraphType);
   toggleModuleEnabledButton.hidden = !moduleMode || multiModuleMode;
+  if (setModuleDefaultButton) {
+    setModuleDefaultButton.hidden = !moduleMode || multiModuleMode
+      || !Boolean(targetNode?.type && (nodeGraphModuleDefinitions[targetNode.type]?.parameters || []).length);
+  }
   if (nativeCodeButton) {
     nativeCodeButton.hidden = !moduleMode || multiModuleMode || !nativeCodeEntry;
   }
@@ -1147,6 +1153,17 @@ function configureNodeSceneContextMenu(mode) {
     toggleModuleEnabledButton.title = targetNodeDisabled
       ? "Enable this module."
       : "Disable this module.";
+    if (setModuleDefaultButton) {
+      const hasSavedDefault = Boolean(targetNode) && nodeGraphModuleHasParameterDefaultsOverride(targetNode.type);
+      setModuleDefaultButton.disabled = !targetNode;
+      setModuleDefaultButton.querySelector("span").textContent = hasSavedDefault
+        ? "Clear Default"
+        : "Set as Default";
+      setModuleDefaultButton.setAttribute("aria-pressed", hasSavedDefault ? "true" : "false");
+      setModuleDefaultButton.title = hasSavedDefault
+        ? "Clear this module type's saved default settings."
+        : "Save this module's current settings as the default for every new module of this type.";
+    }
     if (nativeCodeButton) {
       nativeCodeButton.disabled = !nativeCodeEntry;
       nativeCodeButton.querySelector("span").textContent = "Code";

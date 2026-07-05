@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam WirdoSpiral
 // soemdsp-native-target: wirdoSpiral
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Spiral/Jerobeam WirdoSpiral
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamWirdoSpiral.{h,cpp}
 // (Jerobeam Fenderson's "WirdoSpiral" Gen~ patch). Two independent 0..1 ramp

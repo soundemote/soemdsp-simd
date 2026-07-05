@@ -2,6 +2,8 @@
 // soemdsp-native-label: RSMET Filter
 // soemdsp-native-target: rsmetFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Analog Emulation/RSMET Filter
+// soemdsp-native-construction: false
 //
 // A general-purpose ladder filter (the same design as this repo's
 // ladder_filter module) preceded by a tanh soft clipper and noise

@@ -2,6 +2,8 @@
 // soemdsp-native-label: PLL
 // soemdsp-native-target: pll
 // soemdsp-native-kind: effect
+// soemdsp-native-path: Effect/Phase Locked Loop/PLL
+// soemdsp-native-construction: false
 
 namespace {
 

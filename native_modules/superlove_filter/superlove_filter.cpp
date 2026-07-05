@@ -2,6 +2,8 @@
 // soemdsp-native-label: SuperLove Filter
 // soemdsp-native-target: superloveFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Analog Emulation/SuperLove Filter
+// soemdsp-native-construction: false
 //
 // A trisaw-oscillator feedback resonator through a multi-pole ladder
 // filter tap. Four modes ported from the original SuperLove_LP18,

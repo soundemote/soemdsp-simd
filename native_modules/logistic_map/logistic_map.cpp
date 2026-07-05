@@ -2,6 +2,8 @@
 // soemdsp-native-label: Logistic Map
 // soemdsp-native-target: logisticMap
 // soemdsp-native-kind: chaos
+// soemdsp-native-path: Chaos/Map/Logistic Map
+// soemdsp-native-construction: false
 
 namespace {
 

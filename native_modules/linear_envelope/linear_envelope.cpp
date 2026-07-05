@@ -2,6 +2,8 @@
 // soemdsp-native-label: Linear Envelope
 // soemdsp-native-target: linearEnvelope
 // soemdsp-native-kind: envelope
+// soemdsp-native-path: Envelope/Linear/Linear Envelope
+// soemdsp-native-construction: false
 
 namespace {
 

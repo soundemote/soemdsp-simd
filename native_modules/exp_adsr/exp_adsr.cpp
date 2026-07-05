@@ -2,6 +2,8 @@
 // soemdsp-native-label: Exp ADSR
 // soemdsp-native-target: expAdsr
 // soemdsp-native-kind: envelope
+// soemdsp-native-path: Envelope/ADSR/Exp ADSR
+// soemdsp-native-construction: false
 
 namespace {
 

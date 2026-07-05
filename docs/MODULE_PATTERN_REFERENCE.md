@@ -199,6 +199,10 @@ the `inputCapableSources` set inside that function.
 
 ## Native (C++ -> wasm) modules
 
+For the full, current, step-by-step guide (build command, worklet wiring
+checklist, verification harness, common pitfalls), see
+`docs/NATIVE_CPP_WASM_MODULE_GUIDE.md`. Summary:
+
 Native modules live under `native_modules/<name>/`. Build via
 `scripts/build_native_modules.ps1` (clang++ wasm32 target). The server
 exposes them through `GET /api/native-modules`. The worklet loads them via

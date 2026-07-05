@@ -2,6 +2,8 @@
 // soemdsp-native-label: Delay Effect
 // soemdsp-native-target: delayEffect
 // soemdsp-native-kind: effect
+// soemdsp-native-path: Effect/Delay/Delay Effect
+// soemdsp-native-construction: false
 
 // Ported from delayEffectSample in public/node-live-audio-worklet.js: a
 // modulated single-tap delay line (mode 0 = normal feedback, mode 1 =

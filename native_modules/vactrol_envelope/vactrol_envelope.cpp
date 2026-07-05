@@ -2,6 +2,8 @@
 // soemdsp-native-label: Vactrol Envelope
 // soemdsp-native-target: vactrolEnvelope
 // soemdsp-native-kind: envelope
+// soemdsp-native-path: Envelope/Photoconductor/Vactrol Envelope
+// soemdsp-native-construction: false
 
 // Shared DSP for both vactrol modules (VTL5C3 "vactrolEnvelope" and VTL5C4
 // "vactrolEnvelopeC4" on the JS side). The two parts differ only in their

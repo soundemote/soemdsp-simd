@@ -1,6 +1,7 @@
 const nodeGraphModuleStoreTypes = Object.freeze([
   "polyBlep",
   "sineWavetable",
+  "quadratureOscillator",
   "drumMachine",
   "kickDrum",
   "snareDrum",
@@ -326,6 +327,12 @@ const nodeGraphModuleStoreCatalog = Object.freeze({
     description: "Table-driven sine/cosine oscillator with pitch, frequency, amplitude, and Nyquist-edge fade.",
     label: "SinCos",
     notes: ["implemented", "wavetable", "sin/cos"],
+  },
+  quadratureOscillator: {
+    category: "Oscillator",
+    description: "The coupled-form (\"magic circle\") two-multiply sine/cosine recurrence from musicdsp.org: u[n] = u[n-1] - k*v[n-1], v[n] = v[n-1] + k*u[n], with k = 2*sin(pi*freq/sampleRate). No sin()/cos() calls in the hot loop -- one multiply-add pair per sample derives both outputs from a single shared (u,v) state, self-renormalized against float drift every sample via its always-known instantaneous radius (r^2 = u^2 + v^2). Native C++/WASM.",
+    label: "Quadrature Osc",
+    notes: ["oscillator", "magic circle", "quadrature", "sin/cos", "native"],
   },
   drumMachine: {
     category: "Drum",

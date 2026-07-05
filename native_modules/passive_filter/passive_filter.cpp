@@ -2,6 +2,8 @@
 // soemdsp-native-label: Passive Filter
 // soemdsp-native-target: passiveFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Passive RC/Passive Filter
+// soemdsp-native-construction: false
 
 // 1-pole RC-style filter in three modes: LP, HP, and BP (HP then LP cascaded).
 // mode 0 = LP  (uses highFrequency as cutoff)

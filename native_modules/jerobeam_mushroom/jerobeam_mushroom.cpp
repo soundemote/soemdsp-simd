@@ -2,6 +2,8 @@
 // soemdsp-native-label: Jerobeam Mushroom
 // soemdsp-native-target: mushroom
 // soemdsp-native-kind: jerobeam
+// soemdsp-native-path: Jerobeam/Growth Simulation/Jerobeam Mushroom
+// soemdsp-native-construction: false
 //
 // Ported from soemdsp/include/soemdsp/oscillator/JerobeamMushroom.{h,cpp}
 // (Jerobeam Fenderson's "Mushroom" Gen~ patch). Three independent phasors

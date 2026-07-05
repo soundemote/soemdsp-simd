@@ -2,6 +2,8 @@
 // soemdsp-native-label: Lorenz Attractor
 // soemdsp-native-target: lorenzAttractor
 // soemdsp-native-kind: chaos
+// soemdsp-native-path: Chaos/Attractor/Lorenz Attractor
+// soemdsp-native-construction: false
 
 namespace {
 

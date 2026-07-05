@@ -2,6 +2,8 @@
 // soemdsp-native-label: Fractal Brownian Noise
 // soemdsp-native-target: fractalBrownianNoise
 // soemdsp-native-kind: noise
+// soemdsp-native-path: Noise/Fractal/Fractal Brownian Noise
+// soemdsp-native-construction: false
 
 #include <wasm_simd128.h>
 

@@ -2,6 +2,8 @@
 // soemdsp-native-label: Surge Oscillator
 // soemdsp-native-target: surgeOscillator
 // soemdsp-native-kind: oscillator
+// soemdsp-native-path: Oscillator/Hard Sync/Surge Oscillator
+// soemdsp-native-construction: false
 
 // Design notes (the "aliasing wars" mission):
 //

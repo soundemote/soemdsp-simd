@@ -2,6 +2,8 @@
 // soemdsp-native-label: Noise Generator
 // soemdsp-native-target: noiseGenerator
 // soemdsp-native-kind: noise
+// soemdsp-native-path: Noise/Colored Noise/Noise Generator
+// soemdsp-native-construction: false
 
 #include <wasm_simd128.h>
 

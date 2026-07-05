@@ -43,6 +43,12 @@ def native_module_entry_from_source(source_path: Path) -> dict[str, object] | No
         "label": label,
         "targetType": target_type,
         "kind": headers.get("kind") or "",
+        # Module-declared "Major/Minor/Name" placement path (see
+        # docs/NATIVE_MODULE_PLACEMENT_POLICY.md) -- each module states its
+        # own path via a "soemdsp-native-path" header comment; there is no
+        # enforced taxonomy, modules place themselves wherever makes sense.
+        "path": headers.get("path") or "",
+        "underConstruction": headers.get("construction", "").strip().lower() in ("true", "yes", "1"),
         "source": relative_source,
         "sourceUrl": f"https://github.com/soundemote/soemdsp-sandbox/blob/master/{relative_source}",
         "wasm": relative_wasm,

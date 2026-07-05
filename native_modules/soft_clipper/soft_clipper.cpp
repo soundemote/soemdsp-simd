@@ -2,6 +2,8 @@
 // soemdsp-native-label: Soft Clipper
 // soemdsp-native-target: softClipper
 // soemdsp-native-kind: dynamics
+// soemdsp-native-path: Dynamics/Saturation/Soft Clipper
+// soemdsp-native-construction: false
 
 namespace {
 

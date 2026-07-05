@@ -2,6 +2,8 @@
 // soemdsp-native-label: Resonator Filter
 // soemdsp-native-target: resonatorFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Resonator/Resonator Filter
+// soemdsp-native-construction: false
 //
 // A dual-phasor FM feedback resonator through a one-pole lowpass tap and
 // a DC-blocking highpass tap. Three modes ported from the original

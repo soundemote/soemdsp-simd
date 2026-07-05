@@ -1572,6 +1572,26 @@ function toggleNodeGraphModuleEnabledFromContext() {
   configureNodeSceneContextMenu("module");
 }
 
+// Saves (or clears) this module's current parameter values as the default
+// for every future new module of this type -- isolated to this module type,
+// independent of the current patch (persisted via
+// node-graph-ui-settings-persistence.js's moduleParameterDefaults store).
+function toggleNodeGraphModuleDefaultFromContext() {
+  const sourceNode = nodeGraphPatchNode(nodeGraphModuleActionTargetNodeId());
+  if (!sourceNode) {
+    return;
+  }
+  const hasSavedDefault = nodeGraphModuleHasParameterDefaultsOverride(sourceNode.type);
+  if (hasSavedDefault) {
+    clearNodeGraphModuleParameterDefaultsForType(sourceNode.type);
+    setNodeGraphScriptStatus(`cleared saved default settings for ${sourceNode.type}`, true);
+  } else {
+    setNodeGraphModuleParameterDefaultsForType(sourceNode.type, sourceNode.params || {});
+    setNodeGraphScriptStatus(`saved current settings as the default for ${sourceNode.type}`, true);
+  }
+  configureNodeSceneContextMenu("module");
+}
+
 function toggleNodeGraphModuleTitleFromContext() {
   const sourceNode = nodeGraphPatchNode(nodeGraphModuleActionTargetNodeId());
   if (!sourceNode) {

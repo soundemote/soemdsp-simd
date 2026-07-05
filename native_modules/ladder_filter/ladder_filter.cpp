@@ -2,6 +2,8 @@
 // soemdsp-native-label: Ladder Filter
 // soemdsp-native-target: ladderFilter
 // soemdsp-native-kind: filter
+// soemdsp-native-path: Filter/Moog Ladder/Ladder Filter
+// soemdsp-native-construction: false
 
 namespace {
 

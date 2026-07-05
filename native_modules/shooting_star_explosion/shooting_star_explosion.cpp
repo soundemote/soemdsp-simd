@@ -2,6 +2,8 @@
 // soemdsp-native-label: Shooting Star Explosion
 // soemdsp-native-target: shootingStarExplosion
 // soemdsp-native-kind: game trigger
+// soemdsp-native-path: Game Trigger/Particle/Shooting Star Explosion
+// soemdsp-native-construction: false
 
 namespace {
 

@@ -2,6 +2,8 @@
 // soemdsp-native-label: Chord Memory
 // soemdsp-native-target: chordMemory
 // soemdsp-native-kind: sequencer
+// soemdsp-native-path: Sequencer/Chord/Chord Memory
+// soemdsp-native-construction: false
 
 // Ported from chordMemorySample in public/node-live-audio-worklet.js:
 // a 4-slot latch/clear/advance-arp register, all integer/edge-detection

@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 _env_root = os.environ.get("SOEMDSP_SANDBOX_ROOT", "").strip()
 ROOT = Path(_env_root).resolve() if _env_root else Path(__file__).resolve().parent
 PUBLIC = ROOT / "public"
-BUILD_NUMBER = "20260805"
+BUILD_NUMBER = "20260814"
 VERSION_FILE = ROOT / "VERSION"
 SANDBOX_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "0.0.0"
 DEFAULT_PRESET = PUBLIC / "presets" / "default.json"
@@ -481,6 +481,11 @@ class SandboxServer(BaseHTTPRequestHandler):
             "label": label,
             "targetType": target_type,
             "kind": headers.get("kind") or "",
+            # Module-declared "Major/Minor/Name" placement path -- see
+            # docs/NATIVE_MODULE_PLACEMENT_POLICY.md. No enforced taxonomy;
+            # each module states its own path via a header comment.
+            "path": headers.get("path") or "",
+            "underConstruction": headers.get("construction", "").strip().lower() in ("true", "yes", "1"),
             "source": relative_source,
             "sourceUrl": f"https://github.com/soundemote/soemdsp-sandbox/blob/master/{relative_source}",
             "wasm": relative_wasm,
