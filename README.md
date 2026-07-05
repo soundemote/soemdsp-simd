@@ -1,11 +1,14 @@
-# 🎛️ soemdsp-sandbox
+# 🧵 soemdsp-simd
 
-**A browser-based modular audio synthesis sandbox** — patch together native
-C++/WASM DSP modules, watch waveforms render live, and hear the result
+**The SIMD department of Soundemote's soemdsp-research division** — a
+browser-based modular audio synthesis sandbox forked from
+[soemdsp-sandbox](https://github.com/soundemote/soemdsp-sandbox) to dig into
+vectorization and low-level performance work on native C++/WASM DSP modules.
+Patch modules together, watch waveforms render live, and hear the result
 instantly. No install, no build step, just a Python file server and a
 browser.
 
-### 🌐 Live Demo — [soundemote.io/sandbox](http://soundemote.io/sandbox)
+### 🌐 Parent project — [soemdsp-sandbox](https://github.com/soundemote/soemdsp-sandbox)
 
 ---
 
@@ -30,8 +33,8 @@ browser.
 # No package install is required for the sandbox server.
 
 # Download:
-git clone https://github.com/soundemote/soemdsp-sandbox.git
-cd soemdsp-sandbox
+git clone https://github.com/soundemote/soemdsp-simd.git
+cd soemdsp-simd
 
 # Run:
 python server.py
@@ -143,10 +146,16 @@ python tools\webui-clap-host\webui_clap_host.py --doctor --inspect-metadata
 
 ---
 
-## 🍴 Featured forks & experiments
+## 🧵 About this fork
 
-Themed sandbox forks exploring specific DSP ideas — each one a self-contained
-detour worth a look:
+This is one of several themed sandbox forks under soemdsp-research, each a
+self-contained detour into a specific DSP idea. This one's focus:
+**vectorization and low-level performance** — a methodical dig into the
+parameter/smoothing architecture and the native module dispatch path,
+looking for measured wins (e.g. skipping recomputation on settled
+parameters, SIMD-friendly data layouts) rather than speculative rewrites.
+
+Sibling forks worth a look:
 
 | Fork | What makes it worth a click |
 |---|---|
@@ -157,7 +166,6 @@ detour worth a look:
 | ⚡ [**Digital Efficient Patch System**](https://github.com/elanhickler/soemdsp-sandbox-digital-efficient-patch-system) | Chases real-time multiplayer patch editing, with a brutally honest, phase-by-phase log of profiling dead ends before finding the actual bottleneck. |
 | 🐾 [**Creatures**](https://github.com/elanhickler/soemdsp-sandbox-creatures) | A patchable virtual pet that eats your audio signal and reacts with eight moods, from Peaceful to Meltdown on a harsh clipped signal. |
 | 🎚️ [**Analog Filters**](https://github.com/elanhickler/soemdsp-sandbox-analog-filters) | Models classic analog filter circuits (Moog ladder, ZDF/TPT feedback) closely enough that their self-oscillating, saturating personality falls out for free. |
-| 🧵 [**SIMD**](https://github.com/elanhickler/soemdsp-simd) *(in progress)* | A methodical dig into the parameter/smoothing architecture, landing measured wins like a 1.5x faster reverb from skipping settled-parameter recomputation. |
 
 ---
 
