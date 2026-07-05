@@ -13,3 +13,4 @@ src-tauri/target/
 src-tauri/binaries/
 nohup.out
 .claude/
+.claude/
